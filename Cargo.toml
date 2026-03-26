@@ -18,6 +18,9 @@ thiserror = { version = "2.0.18", optional = true }
 serialport = { version = "4", optional = true }
 clap = { version = "4.6.0", optional = true, features = ["derive"] }
 
+[dev-dependencies]
+diff = "0.1"
+
 [features]
 default = ["std", "serial"]
 std = ["dep:thiserror", "dep:clap"]

@@ -252,3 +252,83 @@ All allocations are static / stack-resident:
 
 No heap allocator required. The 2 048-byte reassembly buffer matches the
 static array in the original C code (`unsigned char gsofData[2048]`).
+
+---
+
+## Testing
+
+### Unit tests
+
+Hand-built byte sequences for each GSOF record type:
+
+```sh
+cargo test --test gsof_tests
+```
+
+### Snapshot (golden record) tests
+
+End-to-end tests that feed real receiver pcap captures through the full
+pipeline (`FrameParser` → `Reassembler` → `parse_gsof_payload` → `Display`)
+and compare against checked-in `.expected` files.
+
+The fixture data comes from the
+[trimble_driver_ros](https://github.com/trimble-navigation/trimble_driver_ros)
+test suite — 30 pcap captures from five Trimble receivers (APPlus20, APPlus60,
+APX-18, SPS986, LVX) covering types 1–3, 6–12, 15–16, 27, 33–35, 37–38,
+40–41, 49–50, 52, including multi-message and multi-page reassembly cases.
+
+#### Prerequisites
+
+- **tshark** (part of Wireshark): used to extract TCP payloads from pcaps.
+- **git-lfs**: the pcap files in trimble_driver_ros are stored with Git LFS.
+
+```sh
+# Debian/Ubuntu
+sudo apt install tshark git-lfs
+```
+
+#### Pulling the fixture data
+
+The pcaps live in a separate repository. Clone it (or ensure your existing
+checkout has LFS objects pulled):
+
+```sh
+# If you already have the repo:
+cd /path/to/trimble_driver_ros
+git lfs install
+git lfs pull
+
+# If cloning fresh:
+git lfs install
+git clone https://github.com/trimble-navigation/trimble_driver_ros.git
+```
+
+Then extract raw Trimcomm byte streams from the pcaps:
+
+```sh
+# From the gsof-parser-rs root:
+./tests/extract_fixtures.sh /path/to/trimble_driver_ros/trimble_driver/test/data
+```
+
+This produces `tests/fixtures/*.bin` files (one per pcap).
+
+#### Running the snapshot tests
+
+```sh
+cargo test --test snapshot_tests
+```
+
+Each test reads a `.bin` fixture, runs it through the full parser, and
+compares the output line-by-line against the corresponding `.expected` file.
+On failure, a diff is printed showing exactly which lines changed.
+
+#### Updating expected output after intentional changes
+
+After changing `Display` formatting or fixing a parser bug, regenerate the
+golden files:
+
+```sh
+GSOF_BLESS=1 cargo test --test snapshot_tests
+```
+
+Review the updated `.expected` files with `git diff` before committing.
