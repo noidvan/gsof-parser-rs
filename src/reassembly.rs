@@ -19,7 +19,8 @@ use crate::gsof::{parse_gsof_payload, GsofRecord, ParseError};
 /// Maximum accumulated GSOF payload size — identical to the original C code.
 pub const GSOF_BUF_MAX: usize = 2048;
 
-#[derive(Debug)]
+#[derive(Debug, Clone)]
+#[cfg_attr(feature = "defmt", derive(defmt::Format))]
 #[cfg_attr(feature = "std", derive(thiserror::Error))]
 pub enum ReassemblyError {
     /// Packet header was fewer than 3 bytes.
@@ -63,7 +64,8 @@ pub struct Reassembler {
 }
 
 /// The paged header present at the start of every Trimcomm 0x40 payload.
-#[derive(Debug, Clone, Copy)]
+#[derive(Debug, Clone, Copy, PartialEq)]
+#[cfg_attr(feature = "defmt", derive(defmt::Format))]
 pub struct PageHeader {
     pub transmission_number: u8,
     pub page_index: u8,

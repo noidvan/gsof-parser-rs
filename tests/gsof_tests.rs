@@ -4,11 +4,11 @@
 /// GSOF ICD, so the tests are self-contained and require no real
 /// receiver data.  The original C code had no tests at all.
 use gsof_parser::gsof::{
-    parse_gsof_payload, parse_gsof_record, AllDetailedSvInfo, AttitudeInfo,
-    BasePositionQuality, BatteryMemoryInfo, BriefSvInfo, ClockInfo, DmiRawData, GsofRecord,
-    InsFullNav, InsRmsInfo, InsVnavFullNav, InsVnavRmsInfo, LatLonHeight, LbandStatus, ParseError,
-    PdopInfo, PositionSigmaInfo, PositionTime, PositionTypeInfo, PositionVcvInfo,
-    ReceivedBaseInfo, ReceiverSerialNumber, SvDetailedInfo, UtcTime, Velocity,
+    parse_gsof_payload, parse_gsof_record, AllBriefSvInfo, AllDetailedSvInfo, AttitudeInfo,
+    BasePositionQuality, BatteryMemoryInfo, BriefSvInfo, ClockInfo, DmiRawData, Ecef, EcefDelta,
+    GsofRecord, InsFullNav, InsRmsInfo, InsVnavFullNav, InsVnavRmsInfo, LatLonHeight, LbandStatus,
+    ParseError, PdopInfo, PositionSigmaInfo, PositionTime, PositionTypeInfo, PositionVcvInfo,
+    ReceivedBaseInfo, ReceiverSerialNumber, SvDetailedInfo, TangentPlaneDelta, UtcTime, Velocity,
 };
 
 // ---------------------------------------------------------------------------
@@ -838,4 +838,135 @@ fn dispatch_dmi_raw_data_empty() {
     buf.push(0); // zero measurements
     let rec = parse_gsof_record(52, &buf);
     assert!(matches!(rec, GsofRecord::DmiRawData(_)));
+}
+
+// ---------------------------------------------------------------------------
+// Type 3 — ECEF round trip
+// ---------------------------------------------------------------------------
+
+#[test]
+fn ecef_round_trip() {
+    let x: f64 = 918_000.123;
+    let y: f64 = -4_346_000.456;
+    let z: f64 = 4_562_000.789;
+    let mut buf = Vec::new();
+    buf.extend_from_slice(&be_f64(x));
+    buf.extend_from_slice(&be_f64(y));
+    buf.extend_from_slice(&be_f64(z));
+
+    let rec = Ecef::parse(&buf).unwrap();
+    assert!((rec.x_m - x).abs() < 1e-9);
+    assert!((rec.y_m - y).abs() < 1e-9);
+    assert!((rec.z_m - z).abs() < 1e-9);
+}
+
+// ---------------------------------------------------------------------------
+// Type 6 — ECEF Delta round trip
+// ---------------------------------------------------------------------------
+
+#[test]
+fn ecef_delta_round_trip() {
+    let dx: f64 = 0.123;
+    let dy: f64 = -0.456;
+    let dz: f64 = 0.789;
+    let mut buf = Vec::new();
+    buf.extend_from_slice(&be_f64(dx));
+    buf.extend_from_slice(&be_f64(dy));
+    buf.extend_from_slice(&be_f64(dz));
+
+    let rec = EcefDelta::parse(&buf).unwrap();
+    assert!((rec.dx_m - dx).abs() < 1e-9);
+    assert!((rec.dy_m - dy).abs() < 1e-9);
+    assert!((rec.dz_m - dz).abs() < 1e-9);
+}
+
+// ---------------------------------------------------------------------------
+// Type 7 — Tangent Plane Delta round trip
+// ---------------------------------------------------------------------------
+
+#[test]
+fn tangent_plane_delta_round_trip() {
+    let e: f64 = 1.5;
+    let n: f64 = -2.3;
+    let u: f64 = 0.7;
+    let mut buf = Vec::new();
+    buf.extend_from_slice(&be_f64(e));
+    buf.extend_from_slice(&be_f64(n));
+    buf.extend_from_slice(&be_f64(u));
+
+    let rec = TangentPlaneDelta::parse(&buf).unwrap();
+    assert!((rec.east_m - e).abs() < 1e-9);
+    assert!((rec.north_m - n).abs() < 1e-9);
+    assert!((rec.up_m - u).abs() < 1e-9);
+}
+
+// ---------------------------------------------------------------------------
+// Type 33 — AllBriefSvInfo with two SVs
+// ---------------------------------------------------------------------------
+
+#[test]
+fn all_brief_sv_info_two_svs() {
+    let mut buf = Vec::new();
+    buf.push(2); // count
+
+    // SV 1: GPS PRN 5
+    buf.push(5);  // prn
+    buf.push(0);  // system = GPS
+    buf.push(0x07); // flags1 = above horizon + assigned + tracked
+    buf.push(0x00); // flags2
+
+    // SV 2: GALILEO PRN 12
+    buf.push(12); // prn
+    buf.push(3);  // system = GALILEO
+    buf.push(0x05); // flags1 = above horizon + tracked
+    buf.push(0x01); // flags2
+
+    let rec = AllBriefSvInfo::parse(&buf).unwrap();
+    assert_eq!(rec.svs.len(), 2);
+    assert_eq!(rec.svs[0].prn, 5);
+    assert_eq!(rec.svs[0].system, 0);
+    assert!(rec.svs[0].is_above_horizon());
+    assert!(rec.svs[0].is_assigned_to_channel());
+    assert!(rec.svs[0].is_tracked());
+    assert_eq!(rec.svs[1].prn, 12);
+    assert_eq!(rec.svs[1].system, 3);
+    assert!(rec.svs[1].is_above_horizon());
+    assert!(!rec.svs[1].is_assigned_to_channel());
+    assert!(rec.svs[1].is_tracked());
+}
+
+// ---------------------------------------------------------------------------
+// Type 8 — Velocity with local_heading
+// ---------------------------------------------------------------------------
+
+#[test]
+fn velocity_with_local_heading() {
+    let heading_rad: f32 = 1.5_f32;
+    let local_heading_rad: f32 = 0.5_f32;
+    let mut buf = Vec::new();
+    buf.push(0x07); // flags
+    buf.extend_from_slice(&be_f32(10.0_f32));
+    buf.extend_from_slice(&be_f32(heading_rad));
+    buf.extend_from_slice(&be_f32(-0.2_f32));
+    buf.extend_from_slice(&be_f32(local_heading_rad));
+    assert_eq!(buf.len(), 17);
+
+    let rec = Velocity::parse(&buf).unwrap();
+    let lh = rec.local_heading.expect("local_heading should be Some");
+    let expected_deg = local_heading_rad * (180.0 / core::f32::consts::PI);
+    assert!((lh - expected_deg).abs() < 1e-4);
+}
+
+#[test]
+fn velocity_without_local_heading() {
+    let heading_rad: f32 = 1.5_f32;
+    let mut buf = Vec::new();
+    buf.push(0x03); // flags
+    buf.extend_from_slice(&be_f32(12.5_f32));
+    buf.extend_from_slice(&be_f32(heading_rad));
+    buf.extend_from_slice(&be_f32(-0.1_f32));
+    assert_eq!(buf.len(), 13);
+
+    let rec = Velocity::parse(&buf).unwrap();
+    assert!(rec.local_heading.is_none());
 }

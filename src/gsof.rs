@@ -21,7 +21,8 @@ use core::fmt;
 // Error type
 // ---------------------------------------------------------------------------
 
-#[derive(Debug, PartialEq, Eq)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+#[cfg_attr(feature = "defmt", derive(defmt::Format))]
 #[cfg_attr(feature = "std", derive(thiserror::Error))]
 pub enum ParseError {
     /// The slice was shorter than the number of bytes we tried to read.
@@ -157,11 +158,476 @@ fn constellation_name(system: u8) -> &'static str {
 const RAD_TO_DEG: f64 = 180.0 / core::f64::consts::PI;
 
 // ---------------------------------------------------------------------------
+// Enumerations
+// ---------------------------------------------------------------------------
+
+/// Velocity measurement source (bit 1 of Velocity flags).
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+#[cfg_attr(feature = "defmt", derive(defmt::Format))]
+pub enum VelocitySource {
+    Doppler,
+    ConsecutiveMeasurements,
+}
+
+/// IMU alignment status for INS records (#49, #50, #63, #64).
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+#[cfg_attr(feature = "defmt", derive(defmt::Format))]
+pub enum ImuAlignmentStatus {
+    GpsOnly,
+    CoarseLeveling,
+    Degraded,
+    Aligned,
+    FullNav,
+    Unknown(u8),
+}
+
+impl From<u8> for ImuAlignmentStatus {
+    fn from(v: u8) -> Self {
+        match v {
+            0 => Self::GpsOnly,
+            1 => Self::CoarseLeveling,
+            2 => Self::Degraded,
+            3 => Self::Aligned,
+            4 => Self::FullNav,
+            other => Self::Unknown(other),
+        }
+    }
+}
+
+/// GNSS quality indicator for INS records (#49, #50, #63, #64).
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+#[cfg_attr(feature = "defmt", derive(defmt::Format))]
+pub enum GnssQuality {
+    FixNotAvailable,
+    GnssSpsMode,
+    DifferentialGpsSps,
+    GpsPpsMode,
+    FixedRtkMode,
+    FloatRtk,
+    DirectGeoreferencingMode,
+    Unknown(u8),
+}
+
+impl From<u8> for GnssQuality {
+    fn from(v: u8) -> Self {
+        match v {
+            0 => Self::FixNotAvailable,
+            1 => Self::GnssSpsMode,
+            2 => Self::DifferentialGpsSps,
+            3 => Self::GpsPpsMode,
+            4 => Self::FixedRtkMode,
+            5 => Self::FloatRtk,
+            6 => Self::DirectGeoreferencingMode,
+            other => Self::Unknown(other),
+        }
+    }
+}
+
+/// Satellite system type for multi-constellation records (#33, #34).
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+#[cfg_attr(feature = "defmt", derive(defmt::Format))]
+pub enum SatelliteType {
+    Gps,
+    Sbas,
+    Glonass,
+    Galileo,
+    Qzss,
+    Beidou,
+    Irnss,
+    Omnistar,
+    Unknown(u8),
+}
+
+impl From<u8> for SatelliteType {
+    fn from(v: u8) -> Self {
+        match v {
+            0 => Self::Gps,
+            1 => Self::Sbas,
+            2 => Self::Glonass,
+            3 => Self::Galileo,
+            4 => Self::Qzss,
+            5 => Self::Beidou,
+            6 => Self::Irnss,
+            10 => Self::Omnistar,
+            other => Self::Unknown(other),
+        }
+    }
+}
+
+/// Position fix type from trimble position_fix.h (#38).
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+#[cfg_attr(feature = "defmt", derive(defmt::Format))]
+pub enum PositionFix {
+    None,
+    Autonomous,
+    AutonomousProp,
+    Sbas,
+    SbasProp,
+    Dgnss,
+    DgnssProp,
+    RtkFloatSync,
+    RtkFloatProp,
+    RtkFixedSync,
+    RtkFixedProp,
+    OmniHp,
+    OmniXp,
+    DitheredRtk,
+    OmniVbs,
+    BeaconDgnss,
+    OmniHpXp,
+    OmniHpG2,
+    OmniG2,
+    RtxSync,
+    RtxProp,
+    OmniMs,
+    OmniL1Only,
+    InsAutonomous,
+    InsSbas,
+    InsDgnss,
+    InsRtxCode,
+    InsRtxCarrier,
+    InsOmniPrecise,
+    InsRtk,
+    InsDeadReckoning,
+    RtxCode,
+    RtxFastSync,
+    RtxFastProp,
+    OmniG3,
+    OmniG4,
+    XfillX,
+    RtxLiteProp,
+    RtxLiteSync,
+    RtxLiteL1Prop,
+    RtxLiteL1Sync,
+    RtxFieldPointProp,
+    RtxFieldPointSync,
+    OmniG2Plus,
+    OmniG4Plus,
+    TitanAutonomous,
+    TitanSbas,
+    TitanDgnss,
+    SlasDgnss,
+    Unknown(u8),
+}
+
+impl From<u8> for PositionFix {
+    fn from(v: u8) -> Self {
+        match v {
+            0 => Self::None,
+            1 => Self::Autonomous,
+            2 => Self::AutonomousProp,
+            3 => Self::Sbas,
+            4 => Self::SbasProp,
+            5 => Self::Dgnss,
+            6 => Self::DgnssProp,
+            7 => Self::RtkFloatSync,
+            8 => Self::RtkFloatProp,
+            9 => Self::RtkFixedSync,
+            10 => Self::RtkFixedProp,
+            11 => Self::OmniHp,
+            12 => Self::OmniXp,
+            13 => Self::DitheredRtk,
+            14 => Self::OmniVbs,
+            15 => Self::BeaconDgnss,
+            16 => Self::OmniHpXp,
+            17 => Self::OmniHpG2,
+            18 => Self::OmniG2,
+            19 => Self::RtxSync,
+            20 => Self::RtxProp,
+            21 => Self::OmniMs,
+            22 => Self::OmniL1Only,
+            23 => Self::InsAutonomous,
+            24 => Self::InsSbas,
+            25 => Self::InsDgnss,
+            26 => Self::InsRtxCode,
+            27 => Self::InsRtxCarrier,
+            28 => Self::InsOmniPrecise,
+            29 => Self::InsRtk,
+            30 => Self::InsDeadReckoning,
+            31 => Self::RtxCode,
+            32 => Self::RtxFastSync,
+            33 => Self::RtxFastProp,
+            34 => Self::OmniG3,
+            35 => Self::OmniG4,
+            36 => Self::XfillX,
+            37 => Self::RtxLiteProp,
+            38 => Self::RtxLiteSync,
+            39 => Self::RtxLiteL1Prop,
+            40 => Self::RtxLiteL1Sync,
+            41 => Self::RtxFieldPointProp,
+            42 => Self::RtxFieldPointSync,
+            43 => Self::OmniG2Plus,
+            44 => Self::OmniG4Plus,
+            45 => Self::TitanAutonomous,
+            46 => Self::TitanSbas,
+            47 => Self::TitanDgnss,
+            48 => Self::SlasDgnss,
+            other => Self::Unknown(other),
+        }
+    }
+}
+
+/// Solution integrity status derived from bits 2-3 of solution_flags (#38).
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+#[cfg_attr(feature = "defmt", derive(defmt::Format))]
+pub enum SolutionIntegrity {
+    NotChecking,
+    CheckingInitialization,
+    InitializationPassed,
+    InitializationFailed,
+    Unknown(u8),
+}
+
+impl SolutionIntegrity {
+    pub fn from_solution_flags(flags: u8) -> Self {
+        let val = (flags >> 2) & 0x03;
+        match val {
+            0 => Self::NotChecking,
+            1 => Self::CheckingInitialization,
+            2 => Self::InitializationPassed,
+            3 => Self::InitializationFailed,
+            other => Self::Unknown(other),
+        }
+    }
+}
+
+impl From<u8> for SolutionIntegrity {
+    fn from(v: u8) -> Self {
+        match v {
+            0 => Self::NotChecking,
+            1 => Self::CheckingInitialization,
+            2 => Self::InitializationPassed,
+            3 => Self::InitializationFailed,
+            other => Self::Unknown(other),
+        }
+    }
+}
+
+/// RTK condition code (#38).
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+#[cfg_attr(feature = "defmt", derive(defmt::Format))]
+pub enum RtkCondition {
+    NewPositionComputed,
+    UnableToObtainSyncedPair,
+    InsufficientDoubleDiffMeasurements,
+    ReferencePositionUnavailable,
+    FailedIntegerVerification,
+    SolutionRmsOverLimit,
+    PdopOrRdopExceedsMask,
+    Unknown(u8),
+}
+
+impl From<u8> for RtkCondition {
+    fn from(v: u8) -> Self {
+        match v {
+            0 => Self::NewPositionComputed,
+            1 => Self::UnableToObtainSyncedPair,
+            2 => Self::InsufficientDoubleDiffMeasurements,
+            3 => Self::ReferencePositionUnavailable,
+            4 => Self::FailedIntegerVerification,
+            5 => Self::SolutionRmsOverLimit,
+            6 => Self::PdopOrRdopExceedsMask,
+            other => Self::Unknown(other),
+        }
+    }
+}
+
+/// RTCM correction status derived from bits 1-2 of network_flags (#38).
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+#[cfg_attr(feature = "defmt", derive(defmt::Format))]
+pub enum RtcmStatus {
+    NotAvailableOrUnknown,
+    CollectingMessages,
+    CollectionComplete,
+    Working,
+    Unknown(u8),
+}
+
+impl RtcmStatus {
+    pub fn from_network_flags(flags: u8) -> Self {
+        let val = (flags >> 1) & 0x03;
+        match val {
+            0 => Self::NotAvailableOrUnknown,
+            1 => Self::CollectingMessages,
+            2 => Self::CollectionComplete,
+            3 => Self::Working,
+            other => Self::Unknown(other),
+        }
+    }
+}
+
+impl From<u8> for RtcmStatus {
+    fn from(v: u8) -> Self {
+        match v {
+            0 => Self::NotAvailableOrUnknown,
+            1 => Self::CollectingMessages,
+            2 => Self::CollectionComplete,
+            3 => Self::Working,
+            other => Self::Unknown(other),
+        }
+    }
+}
+
+/// Base position quality indicator (#41).
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+#[cfg_attr(feature = "defmt", derive(defmt::Format))]
+pub enum BaseQuality {
+    NotAvailableOrInvalid,
+    Autonomous,
+    DifferentialSbasOrOmnistarVbs,
+    RtkFixed,
+    OmnistarXpHpOrRtkFloat,
+    Unknown(u8),
+}
+
+impl From<u8> for BaseQuality {
+    fn from(v: u8) -> Self {
+        match v {
+            0 => Self::NotAvailableOrInvalid,
+            1 => Self::Autonomous,
+            2 => Self::DifferentialSbasOrOmnistarVbs,
+            3 => Self::RtkFixed,
+            4 => Self::OmnistarXpHpOrRtkFloat,
+            other => Self::Unknown(other),
+        }
+    }
+}
+
+/// OmniSTAR HP/XP subscribed engine (#40).
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+#[cfg_attr(feature = "defmt", derive(defmt::Format))]
+pub enum HpXpEngine {
+    None,
+    Hp,
+    Xp,
+    G2,
+    Unknown(u8),
+}
+
+impl From<u8> for HpXpEngine {
+    fn from(v: u8) -> Self {
+        match v {
+            0 => Self::None,
+            1 => Self::Hp,
+            2 => Self::Xp,
+            3 => Self::G2,
+            other => Self::Unknown(other),
+        }
+    }
+}
+
+/// OmniSTAR HP/XP library mode (#40).
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+#[cfg_attr(feature = "defmt", derive(defmt::Format))]
+pub enum HpXpLibraryMode {
+    Idle,
+    Searching,
+    Converging,
+    Converged,
+    Degraded,
+    Unknown(u8),
+}
+
+impl From<u8> for HpXpLibraryMode {
+    fn from(v: u8) -> Self {
+        match v {
+            0 => Self::Idle,
+            1 => Self::Searching,
+            2 => Self::Converging,
+            3 => Self::Converged,
+            4 => Self::Degraded,
+            other => Self::Unknown(other),
+        }
+    }
+}
+
+/// OmniSTAR VBS library mode (#40).
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+#[cfg_attr(feature = "defmt", derive(defmt::Format))]
+pub enum VbsLibraryMode {
+    Idle,
+    Searching,
+    Converging,
+    Converged,
+    Unknown(u8),
+}
+
+impl From<u8> for VbsLibraryMode {
+    fn from(v: u8) -> Self {
+        match v {
+            0 => Self::Idle,
+            1 => Self::Searching,
+            2 => Self::Converging,
+            3 => Self::Converged,
+            other => Self::Unknown(other),
+        }
+    }
+}
+
+/// OmniSTAR beam mode (#40).
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+#[cfg_attr(feature = "defmt", derive(defmt::Format))]
+pub enum BeamMode {
+    Manual,
+    Auto,
+    Unknown(u8),
+}
+
+impl From<u8> for BeamMode {
+    fn from(v: u8) -> Self {
+        match v {
+            0 => Self::Manual,
+            1 => Self::Auto,
+            other => Self::Unknown(other),
+        }
+    }
+}
+
+/// OmniSTAR motion state (#40).
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+#[cfg_attr(feature = "defmt", derive(defmt::Format))]
+pub enum MotionState {
+    Stationary,
+    Moving,
+    Unknown(u8),
+}
+
+impl From<u8> for MotionState {
+    fn from(v: u8) -> Self {
+        match v {
+            0 => Self::Stationary,
+            1 => Self::Moving,
+            other => Self::Unknown(other),
+        }
+    }
+}
+
+/// NMEA encryption state (#40).
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+#[cfg_attr(feature = "defmt", derive(defmt::Format))]
+pub enum NmeaEncryptionState {
+    Disabled,
+    Enabled,
+    Unknown(u8),
+}
+
+impl From<u8> for NmeaEncryptionState {
+    fn from(v: u8) -> Self {
+        match v {
+            0 => Self::Disabled,
+            1 => Self::Enabled,
+            other => Self::Unknown(other),
+        }
+    }
+}
+
+// ---------------------------------------------------------------------------
 // GSOF record types
 // ---------------------------------------------------------------------------
 
 /// Encompasses every decoded GSOF subtype record.
-#[derive(Debug)]
+#[derive(Debug, Clone, PartialEq)]
+#[cfg_attr(feature = "defmt", derive(defmt::Format))]
 #[allow(clippy::large_enum_variant)]
 pub enum GsofRecord {
     PositionTime(PositionTime),                 // type 1
@@ -194,7 +660,7 @@ pub enum GsofRecord {
     InsVnavRmsInfo(InsVnavRmsInfo),             // type 64
     Unknown {
         gsof_type: u8,
-        data: heapless::Vec<u8, 255>,
+        length: u8,
     },
 }
 
@@ -229,15 +695,8 @@ impl fmt::Display for GsofRecord {
             GsofRecord::DmiRawData(r) => write!(f, "{r}"),
             GsofRecord::InsVnavFullNav(r) => write!(f, "{r}"),
             GsofRecord::InsVnavRmsInfo(r) => write!(f, "{r}"),
-            GsofRecord::Unknown { gsof_type, data } => {
-                write!(f, "  GsofType:{gsof_type}  len:{}\n  ", data.len())?;
-                for (i, b) in data.iter().enumerate() {
-                    if i > 0 && i % 16 == 0 {
-                        write!(f, "\n  ")?;
-                    }
-                    write!(f, "{b:02X} ")?;
-                }
-                Ok(())
+            GsofRecord::Unknown { gsof_type, length } => {
+                write!(f, "  GsofType:{gsof_type}  len:{length}")
             }
         }
     }
@@ -247,13 +706,40 @@ impl fmt::Display for GsofRecord {
 // Type 1 — Position/Time
 // ---------------------------------------------------------------------------
 
-#[derive(Debug)]
+/// GSOF Record Type 1 — Position Time Information
+///
+/// | Offset | Size | Type | Field |
+/// |--------|------|------|-------|
+/// | 0 | 4 | u32 | GPS time of week \[ms\] |
+/// | 4 | 2 | u16 | GPS week number |
+/// | 6 | 1 | u8 | Number of SVs used |
+/// | 7 | 1 | u8 | Position flags 1 |
+/// | 8 | 1 | u8 | Position flags 2 |
+/// | 9 | 1 | u8 | Initialization number |
+///
+/// flags1 bits:
+///   0: new position, 1: clock fix only, 2: horizontal coords computed,
+///   3: height computed, 5: least squares position, 7: L1 pseudo-range used
+///
+/// flags2 bits:
+///   0: differential solution, 1: differential position is phase,
+///   2: differential position has fixed integers, 3: OmniSTAR solution,
+///   4: position constrained (static), 5: network RTK solution,
+///   6: RTK location, 7: beacon DGPS
+#[derive(Debug, Clone, Copy, PartialEq)]
+#[cfg_attr(feature = "defmt", derive(defmt::Format))]
 pub struct PositionTime {
+    /// GPS time of week \[ms\].
     pub milliseconds: u32,
+    /// GPS week number.
     pub week_number: u16,
+    /// Number of SVs used in solution.
     pub num_svs: u8,
+    /// Position flags byte 1.
     pub flags1: u8,
+    /// Position flags byte 2.
     pub flags2: u8,
+    /// Initialization counter.
     pub init_number: u8,
 }
 
@@ -269,6 +755,35 @@ impl PositionTime {
             init_number: r.u8()?,
         })
     }
+
+    /// flags1 bit 0: new position computed.
+    pub fn is_new_pos(&self) -> bool { self.flags1 & (1 << 0) != 0 }
+    /// flags1 bit 1: clock fix only (no position).
+    pub fn is_clock_fix(&self) -> bool { self.flags1 & (1 << 1) != 0 }
+    /// flags1 bit 2: horizontal coordinates computed.
+    pub fn is_h_coordinates_computed(&self) -> bool { self.flags1 & (1 << 2) != 0 }
+    /// flags1 bit 3: height computed.
+    pub fn is_height_computed(&self) -> bool { self.flags1 & (1 << 3) != 0 }
+    /// flags1 bit 5: least squares position.
+    pub fn is_least_squares(&self) -> bool { self.flags1 & (1 << 5) != 0 }
+    /// flags1 bit 7: L1 pseudo-range used.
+    pub fn is_l1_pseudo_range_used(&self) -> bool { self.flags1 & (1 << 7) != 0 }
+    /// flags2 bit 0: differential solution.
+    pub fn is_diff_soln(&self) -> bool { self.flags2 & (1 << 0) != 0 }
+    /// flags2 bit 1: differential position is in phase.
+    pub fn is_diff_pos_in_phase(&self) -> bool { self.flags2 & (1 << 1) != 0 }
+    /// flags2 bit 2: differential position has fixed integers.
+    pub fn is_diff_pos_fixed_int(&self) -> bool { self.flags2 & (1 << 2) != 0 }
+    /// flags2 bit 3: OmniSTAR solution.
+    pub fn is_omnistar_soln(&self) -> bool { self.flags2 & (1 << 3) != 0 }
+    /// flags2 bit 4: position constrained (static).
+    pub fn is_static_constraint(&self) -> bool { self.flags2 & (1 << 4) != 0 }
+    /// flags2 bit 5: network RTK solution.
+    pub fn is_network_rtk_soln(&self) -> bool { self.flags2 & (1 << 5) != 0 }
+    /// flags2 bit 6: RTK location.
+    pub fn is_rtk_location(&self) -> bool { self.flags2 & (1 << 6) != 0 }
+    /// flags2 bit 7: beacon DGPS.
+    pub fn is_beacon_dgps(&self) -> bool { self.flags2 & (1 << 7) != 0 }
 }
 
 impl fmt::Display for PositionTime {
@@ -291,10 +806,21 @@ impl fmt::Display for PositionTime {
 // Type 2 — Lat/Lon/Height
 // ---------------------------------------------------------------------------
 
-#[derive(Debug)]
+/// GSOF Record Type 2 — Latitude, Longitude, Height
+///
+/// | Offset | Size | Type | Field |
+/// |--------|------|------|-------|
+/// | 0 | 8 | f64 | Latitude \[rad\] |
+/// | 8 | 8 | f64 | Longitude \[rad\] |
+/// | 16 | 8 | f64 | Height above ellipsoid \[m\] |
+#[derive(Debug, Clone, Copy, PartialEq)]
+#[cfg_attr(feature = "defmt", derive(defmt::Format))]
 pub struct LatLonHeight {
+    /// Latitude \[deg\] (converted from radians on parse).
     pub lat_deg: f64,
+    /// Longitude \[deg\] (converted from radians on parse).
     pub lon_deg: f64,
+    /// Height above ellipsoid \[m\].
     pub height_m: f64,
 }
 
@@ -324,10 +850,21 @@ impl fmt::Display for LatLonHeight {
 // Type 3 — ECEF
 // ---------------------------------------------------------------------------
 
-#[derive(Debug)]
+/// GSOF Record Type 3 — ECEF Position
+///
+/// | Offset | Size | Type | Field |
+/// |--------|------|------|-------|
+/// | 0 | 8 | f64 | X coordinate \[m\] |
+/// | 8 | 8 | f64 | Y coordinate \[m\] |
+/// | 16 | 8 | f64 | Z coordinate \[m\] |
+#[derive(Debug, Clone, Copy, PartialEq)]
+#[cfg_attr(feature = "defmt", derive(defmt::Format))]
 pub struct Ecef {
+    /// ECEF X \[m\].
     pub x_m: f64,
+    /// ECEF Y \[m\].
     pub y_m: f64,
+    /// ECEF Z \[m\].
     pub z_m: f64,
 }
 
@@ -353,11 +890,24 @@ impl fmt::Display for Ecef {
 // Type 4 — Local Datum
 // ---------------------------------------------------------------------------
 
-#[derive(Debug)]
+/// GSOF Record Type 4 — Local Datum Position
+///
+/// | Offset | Size | Type | Field |
+/// |--------|------|------|-------|
+/// | 0 | 8 | \[u8;8\] | Datum ID string |
+/// | 8 | 8 | f64 | Latitude \[rad\] |
+/// | 16 | 8 | f64 | Longitude \[rad\] |
+/// | 24 | 8 | f64 | Height above ellipsoid \[m\] |
+#[derive(Debug, Clone, Copy, PartialEq)]
+#[cfg_attr(feature = "defmt", derive(defmt::Format))]
 pub struct LocalDatum {
+    /// Datum ID string (8 ASCII bytes).
     pub id: [u8; 8],
+    /// Latitude \[deg\] (converted from radians on parse).
     pub lat_deg: f64,
+    /// Longitude \[deg\] (converted from radians on parse).
     pub lon_deg: f64,
+    /// Height above ellipsoid \[m\].
     pub height_m: f64,
 }
 
@@ -399,10 +949,21 @@ impl fmt::Display for LocalDatum {
 // Type 6 — ECEF Delta
 // ---------------------------------------------------------------------------
 
-#[derive(Debug)]
+/// GSOF Record Type 6 — ECEF Delta
+///
+/// | Offset | Size | Type | Field |
+/// |--------|------|------|-------|
+/// | 0 | 8 | f64 | Delta X \[m\] |
+/// | 8 | 8 | f64 | Delta Y \[m\] |
+/// | 16 | 8 | f64 | Delta Z \[m\] |
+#[derive(Debug, Clone, Copy, PartialEq)]
+#[cfg_attr(feature = "defmt", derive(defmt::Format))]
 pub struct EcefDelta {
+    /// ECEF delta X \[m\].
     pub dx_m: f64,
+    /// ECEF delta Y \[m\].
     pub dy_m: f64,
+    /// ECEF delta Z \[m\].
     pub dz_m: f64,
 }
 
@@ -432,10 +993,21 @@ impl fmt::Display for EcefDelta {
 // Type 7 — Tangent Plane Delta
 // ---------------------------------------------------------------------------
 
-#[derive(Debug)]
+/// GSOF Record Type 7 — Tangent Plane Delta
+///
+/// | Offset | Size | Type | Field |
+/// |--------|------|------|-------|
+/// | 0 | 8 | f64 | East \[m\] |
+/// | 8 | 8 | f64 | North \[m\] |
+/// | 16 | 8 | f64 | Up \[m\] |
+#[derive(Debug, Clone, Copy, PartialEq)]
+#[cfg_attr(feature = "defmt", derive(defmt::Format))]
 pub struct TangentPlaneDelta {
+    /// East component \[m\].
     pub east_m: f64,
+    /// North component \[m\].
     pub north_m: f64,
+    /// Up component \[m\].
     pub up_m: f64,
 }
 
@@ -465,34 +1037,82 @@ impl fmt::Display for TangentPlaneDelta {
 // Type 8 — Velocity
 // ---------------------------------------------------------------------------
 
-#[derive(Debug)]
+/// GSOF Record Type 8 — Velocity Data
+///
+/// | Offset | Size | Type | Field |
+/// |--------|------|------|-------|
+/// | 0 | 1 | u8 | Velocity flags |
+/// | 1 | 4 | f32 | Horizontal velocity \[m/s\] |
+/// | 5 | 4 | f32 | Heading \[rad\] |
+/// | 9 | 4 | f32 | Vertical velocity \[m/s\] |
+/// | 13 | 4 | f32 | Local heading \[rad\] (optional, present when len >= 17) |
+///
+/// flags bits:
+///   0: velocity data valid, 1: velocity source (0=Doppler, 1=consecutive),
+///   2: heading data valid
+#[derive(Debug, Clone, Copy, PartialEq)]
+#[cfg_attr(feature = "defmt", derive(defmt::Format))]
 pub struct Velocity {
+    /// Velocity flags byte.
     pub flags: u8,
+    /// Horizontal velocity \[m/s\].
     pub velocity_ms: f32,
+    /// Heading \[deg\] (converted from radians on parse).
     pub heading_deg: f32,
+    /// Vertical velocity \[m/s\].
     pub vertical_ms: f32,
+    /// Local heading \[deg\] (optional, converted from radians on parse).
+    pub local_heading: Option<f32>,
 }
 
 impl Velocity {
     pub fn parse(data: &[u8]) -> Result<Self, ParseError> {
         let mut r = Reader::new(data, 8);
+        let flags = r.u8()?;
+        let velocity_ms = r.f32()?;
+        let heading_deg = r.f32()? * (180.0 / core::f32::consts::PI);
+        let vertical_ms = r.f32()?;
+        let local_heading = if r.remaining() >= 4 {
+            Some(r.f32()? * (180.0 / core::f32::consts::PI))
+        } else {
+            None
+        };
         Ok(Self {
-            flags: r.u8()?,
-            velocity_ms: r.f32()?,
-            heading_deg: r.f32()? * (180.0 / core::f32::consts::PI),
-            vertical_ms: r.f32()?,
+            flags,
+            velocity_ms,
+            heading_deg,
+            vertical_ms,
+            local_heading,
         })
     }
+
+    /// flags bit 0: velocity data is valid.
+    pub fn is_vel_data_valid(&self) -> bool { self.flags & (1 << 0) != 0 }
+    /// flags bit 1: velocity source.
+    pub fn velocity_source(&self) -> VelocitySource {
+        if self.flags & (1 << 1) != 0 {
+            VelocitySource::ConsecutiveMeasurements
+        } else {
+            VelocitySource::Doppler
+        }
+    }
+    /// flags bit 2: heading data is valid.
+    pub fn is_heading_data_valid(&self) -> bool { self.flags & (1 << 2) != 0 }
 }
 
 impl fmt::Display for Velocity {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        writeln!(f, "  GsofType:8 - Velocity Data  len:{}", 13)?;
+        let len = if self.local_heading.is_some() { 17 } else { 13 };
+        writeln!(f, "  GsofType:8 - Velocity Data  len:{}", len)?;
         write!(
             f,
             "  Flags:{:02X}  velocity:{:.3}  heading:{:.3}  vertical:{:.3}",
             self.flags, self.velocity_ms, self.heading_deg, self.vertical_ms
-        )
+        )?;
+        if let Some(lh) = self.local_heading {
+            write!(f, "  local_heading:{:.3}", lh)?;
+        }
+        Ok(())
     }
 }
 
@@ -500,11 +1120,24 @@ impl fmt::Display for Velocity {
 // Type 9 — PDOP
 // ---------------------------------------------------------------------------
 
-#[derive(Debug)]
+/// GSOF Record Type 9 — PDOP Information
+///
+/// | Offset | Size | Type | Field |
+/// |--------|------|------|-------|
+/// | 0 | 4 | f32 | PDOP |
+/// | 4 | 4 | f32 | HDOP |
+/// | 8 | 4 | f32 | VDOP |
+/// | 12 | 4 | f32 | TDOP |
+#[derive(Debug, Clone, Copy, PartialEq)]
+#[cfg_attr(feature = "defmt", derive(defmt::Format))]
 pub struct PdopInfo {
+    /// Position dilution of precision.
     pub pdop: f32,
+    /// Horizontal dilution of precision.
     pub hdop: f32,
+    /// Vertical dilution of precision.
     pub vdop: f32,
+    /// Time dilution of precision.
     pub tdop: f32,
 }
 
@@ -535,10 +1168,25 @@ impl fmt::Display for PdopInfo {
 // Type 10 — Clock Info
 // ---------------------------------------------------------------------------
 
-#[derive(Debug)]
+/// GSOF Record Type 10 — Clock Information
+///
+/// | Offset | Size | Type | Field |
+/// |--------|------|------|-------|
+/// | 0 | 1 | u8 | Clock flags |
+/// | 1 | 8 | f64 | Clock offset \[ms\] |
+/// | 9 | 8 | f64 | Frequency offset \[ppm\] |
+///
+/// clock_flags bits:
+///   0: clock offset valid, 1: frequency offset valid,
+///   2: receiver in anywhere fix mode
+#[derive(Debug, Clone, Copy, PartialEq)]
+#[cfg_attr(feature = "defmt", derive(defmt::Format))]
 pub struct ClockInfo {
+    /// Clock flags byte.
     pub clock_flags: u8,
+    /// Clock offset \[ms\].
     pub clock_offset_ms: f64,
+    /// Frequency offset \[ppm\].
     pub freq_offset_ppm: f64,
 }
 
@@ -551,6 +1199,13 @@ impl ClockInfo {
             freq_offset_ppm: r.f64()?,
         })
     }
+
+    /// clock_flags bit 0: clock offset is valid.
+    pub fn is_clock_offset_valid(&self) -> bool { self.clock_flags & (1 << 0) != 0 }
+    /// clock_flags bit 1: frequency offset is valid.
+    pub fn is_freq_offset_valid(&self) -> bool { self.clock_flags & (1 << 1) != 0 }
+    /// clock_flags bit 2: receiver is in anywhere fix mode.
+    pub fn is_receiver_in_anywhere_fix_mode(&self) -> bool { self.clock_flags & (1 << 2) != 0 }
 }
 
 impl fmt::Display for ClockInfo {
@@ -568,16 +1223,39 @@ impl fmt::Display for ClockInfo {
 // Type 11 — Position VCV Info
 // ---------------------------------------------------------------------------
 
-#[derive(Debug)]
+/// GSOF Record Type 11 — Position Variance-Covariance Information
+///
+/// | Offset | Size | Type | Field |
+/// |--------|------|------|-------|
+/// | 0 | 4 | f32 | Position RMS \[m\] |
+/// | 4 | 4 | f32 | VCV XX \[m^2\] |
+/// | 8 | 4 | f32 | VCV XY \[m^2\] |
+/// | 12 | 4 | f32 | VCV XZ \[m^2\] |
+/// | 16 | 4 | f32 | VCV YY \[m^2\] |
+/// | 20 | 4 | f32 | VCV YZ \[m^2\] |
+/// | 24 | 4 | f32 | VCV ZZ \[m^2\] |
+/// | 28 | 4 | f32 | Unit variance |
+/// | 32 | 2 | u16 | Number of epochs |
+#[derive(Debug, Clone, Copy, PartialEq)]
+#[cfg_attr(feature = "defmt", derive(defmt::Format))]
 pub struct PositionVcvInfo {
+    /// Position RMS \[m\].
     pub position_rms: f32,
+    /// Variance-covariance XX \[m^2\].
     pub vcv_xx: f32,
+    /// Variance-covariance XY \[m^2\].
     pub vcv_xy: f32,
+    /// Variance-covariance XZ \[m^2\].
     pub vcv_xz: f32,
+    /// Variance-covariance YY \[m^2\].
     pub vcv_yy: f32,
+    /// Variance-covariance YZ \[m^2\].
     pub vcv_yz: f32,
+    /// Variance-covariance ZZ \[m^2\].
     pub vcv_zz: f32,
+    /// Unit variance (a-posteriori).
     pub unit_variance: f32,
+    /// Number of epochs in solution.
     pub num_epochs: u16,
 }
 
@@ -618,17 +1296,42 @@ impl fmt::Display for PositionVcvInfo {
 // Type 12 — Position Sigma Info
 // ---------------------------------------------------------------------------
 
-#[derive(Debug)]
+/// GSOF Record Type 12 — Position Sigma Information
+///
+/// | Offset | Size | Type | Field |
+/// |--------|------|------|-------|
+/// | 0 | 4 | f32 | Position RMS \[m\] |
+/// | 4 | 4 | f32 | Sigma East \[m\] |
+/// | 8 | 4 | f32 | Sigma North \[m\] |
+/// | 12 | 4 | f32 | Covariance East-North \[m^2\] |
+/// | 16 | 4 | f32 | Sigma Up \[m\] |
+/// | 20 | 4 | f32 | Semi-major axis \[m\] |
+/// | 24 | 4 | f32 | Semi-minor axis \[m\] |
+/// | 28 | 4 | f32 | Orientation \[deg\] |
+/// | 32 | 4 | f32 | Unit variance |
+/// | 36 | 2 | u16 | Number of epochs |
+#[derive(Debug, Clone, Copy, PartialEq)]
+#[cfg_attr(feature = "defmt", derive(defmt::Format))]
 pub struct PositionSigmaInfo {
+    /// Position RMS \[m\].
     pub position_rms: f32,
+    /// Sigma East \[m\].
     pub sigma_east: f32,
+    /// Sigma North \[m\].
     pub sigma_north: f32,
+    /// Covariance East-North \[m^2\].
     pub covar_east_north: f32,
+    /// Sigma Up \[m\].
     pub sigma_up: f32,
+    /// Error ellipse semi-major axis \[m\].
     pub semi_major_axis: f32,
+    /// Error ellipse semi-minor axis \[m\].
     pub semi_minor_axis: f32,
+    /// Error ellipse orientation \[deg\].
     pub orientation_deg: f32,
+    /// Unit variance (a-posteriori).
     pub unit_variance: f32,
+    /// Number of epochs in solution.
     pub num_epochs: u16,
 }
 
@@ -678,15 +1381,46 @@ impl fmt::Display for PositionSigmaInfo {
 // Type 13 — Brief SV Info (GPS-only, older format)
 // ---------------------------------------------------------------------------
 
-#[derive(Debug)]
+/// Individual SV entry in Brief SV Info (Type 13).
+///
+/// | Offset | Size | Type | Field |
+/// |--------|------|------|-------|
+/// | 0 | 1 | u8 | PRN |
+/// | 1 | 1 | u8 | flags1 |
+/// | 2 | 1 | u8 | flags2 |
+///
+/// flags1 bits:
+///   0: above horizon, 1: assigned to channel, 2: tracked
+#[derive(Debug, Clone, Copy, PartialEq)]
+#[cfg_attr(feature = "defmt", derive(defmt::Format))]
 pub struct BriefSv {
+    /// Satellite PRN.
     pub prn: u8,
+    /// SV flags byte 1.
     pub flags1: u8,
+    /// SV flags byte 2.
     pub flags2: u8,
 }
 
-#[derive(Debug)]
+impl BriefSv {
+    /// flags1 bit 0: SV is above the horizon.
+    pub fn is_above_horizon(&self) -> bool { self.flags1 & (1 << 0) != 0 }
+    /// flags1 bit 1: SV is assigned to a channel.
+    pub fn is_assigned_to_channel(&self) -> bool { self.flags1 & (1 << 1) != 0 }
+    /// flags1 bit 2: SV is being tracked.
+    pub fn is_tracked(&self) -> bool { self.flags1 & (1 << 2) != 0 }
+}
+
+/// GSOF Record Type 13 — Brief SV Info (GPS-only)
+///
+/// | Offset | Size | Type | Field |
+/// |--------|------|------|-------|
+/// | 0 | 1 | u8 | SV count |
+/// | 1 | 3*N | ... | Per-SV data (3 bytes each) |
+#[derive(Debug, Clone, PartialEq)]
+#[cfg_attr(feature = "defmt", derive(defmt::Format))]
 pub struct BriefSvInfo {
+    /// Collection of brief SV entries.
     pub svs: heapless::Vec<BriefSv, 32>,
 }
 
@@ -744,19 +1478,77 @@ impl fmt::Display for BriefSvInfo {
 // Type 14 — SV Detailed Info (GPS-only, older format)
 // ---------------------------------------------------------------------------
 
-#[derive(Debug)]
+/// Individual SV entry in Detailed SV Info (Type 14).
+///
+/// | Offset | Size | Type | Field |
+/// |--------|------|------|-------|
+/// | 0 | 1 | u8 | PRN |
+/// | 1 | 1 | u8 | flags1 |
+/// | 2 | 1 | u8 | flags2 |
+/// | 3 | 1 | u8 | Elevation \[deg\] |
+/// | 4 | 2 | u16 | Azimuth \[deg\] |
+/// | 6 | 1 | u8 | L1 SNR \[dB-Hz * 4\] |
+/// | 7 | 1 | u8 | L2 SNR \[dB-Hz * 4\] |
+///
+/// flags1 bits:
+///   0: above horizon, 1: assigned to channel, 2: tracked single freq,
+///   3: tracked dual freq, 4: reported at base L1, 5: reported at base L2,
+///   6: used in position, 7: used in RTK
+///
+/// flags2 bits:
+///   0: tracking P-code L1, 1: tracking P-code L2
+#[derive(Debug, Clone, Copy, PartialEq)]
+#[cfg_attr(feature = "defmt", derive(defmt::Format))]
 pub struct SvDetail {
+    /// Satellite PRN.
     pub prn: u8,
+    /// SV flags byte 1.
     pub flags1: u8,
+    /// SV flags byte 2.
     pub flags2: u8,
+    /// Elevation angle \[deg\].
     pub elevation_deg: u8,
+    /// Azimuth angle \[deg\].
     pub azimuth_deg: u16,
+    /// L1 signal-to-noise ratio \[dB-Hz * 4\].
     pub l1_snr: u8,
+    /// L2 signal-to-noise ratio \[dB-Hz * 4\].
     pub l2_snr: u8,
 }
 
-#[derive(Debug)]
+impl SvDetail {
+    /// flags1 bit 0: SV is above the horizon.
+    pub fn is_above_horizon(&self) -> bool { self.flags1 & (1 << 0) != 0 }
+    /// flags1 bit 1: SV is assigned to a channel.
+    pub fn is_assigned_to_channel(&self) -> bool { self.flags1 & (1 << 1) != 0 }
+    /// flags1 bit 2: SV is tracked on single frequency.
+    pub fn is_tracked_single_freq(&self) -> bool { self.flags1 & (1 << 2) != 0 }
+    /// flags1 bit 3: SV is tracked on dual frequency.
+    pub fn is_tracked_dual_freq(&self) -> bool { self.flags1 & (1 << 3) != 0 }
+    /// flags1 bit 4: SV is reported at base station L1.
+    pub fn is_reported_at_base_l1(&self) -> bool { self.flags1 & (1 << 4) != 0 }
+    /// flags1 bit 5: SV is reported at base station L2.
+    pub fn is_reported_at_base_l2(&self) -> bool { self.flags1 & (1 << 5) != 0 }
+    /// flags1 bit 6: SV is used in position solution.
+    pub fn is_used_in_position(&self) -> bool { self.flags1 & (1 << 6) != 0 }
+    /// flags1 bit 7: SV is used in RTK solution.
+    pub fn is_used_in_rtk(&self) -> bool { self.flags1 & (1 << 7) != 0 }
+    /// flags2 bit 0: tracking P-code on L1.
+    pub fn is_tracking_p_code_l1(&self) -> bool { self.flags2 & (1 << 0) != 0 }
+    /// flags2 bit 1: tracking P-code on L2.
+    pub fn is_tracking_p_code_l2(&self) -> bool { self.flags2 & (1 << 1) != 0 }
+}
+
+/// GSOF Record Type 14 — SV Detailed Info (GPS-only)
+///
+/// | Offset | Size | Type | Field |
+/// |--------|------|------|-------|
+/// | 0 | 1 | u8 | SV count |
+/// | 1 | 8*N | ... | Per-SV data (8 bytes each) |
+#[derive(Debug, Clone, PartialEq)]
+#[cfg_attr(feature = "defmt", derive(defmt::Format))]
 pub struct SvDetailedInfo {
+    /// Collection of detailed SV entries.
     pub svs: heapless::Vec<SvDetail, 32>,
 }
 
@@ -824,8 +1616,15 @@ impl fmt::Display for SvDetailedInfo {
 // Type 15 — Receiver Serial Number
 // ---------------------------------------------------------------------------
 
-#[derive(Debug)]
+/// GSOF Record Type 15 — Receiver Serial Number
+///
+/// | Offset | Size | Type | Field |
+/// |--------|------|------|-------|
+/// | 0 | 4 | i32 | Serial number |
+#[derive(Debug, Clone, Copy, PartialEq)]
+#[cfg_attr(feature = "defmt", derive(defmt::Format))]
 pub struct ReceiverSerialNumber {
+    /// Receiver serial number.
     pub serial_number: i32,
 }
 
@@ -849,11 +1648,27 @@ impl fmt::Display for ReceiverSerialNumber {
 // Type 16 — UTC Time
 // ---------------------------------------------------------------------------
 
-#[derive(Debug)]
+/// GSOF Record Type 16 — UTC Time Information
+///
+/// | Offset | Size | Type | Field |
+/// |--------|------|------|-------|
+/// | 0 | 4 | u32 | GPS time of week \[ms\] |
+/// | 4 | 2 | u16 | GPS week number |
+/// | 6 | 2 | i16 | UTC offset \[s\] |
+/// | 8 | 1 | u8 | Time flags |
+///
+/// flags bits:
+///   0: time information valid, 1: UTC offset valid
+#[derive(Debug, Clone, Copy, PartialEq)]
+#[cfg_attr(feature = "defmt", derive(defmt::Format))]
 pub struct UtcTime {
+    /// GPS time of week \[ms\].
     pub milliseconds: u32,
+    /// GPS week number.
     pub week_number: u16,
+    /// UTC offset from GPS time \[s\].
     pub utc_offset_s: i16,
+    /// Time flags byte.
     pub flags: u8,
 }
 
@@ -867,6 +1682,11 @@ impl UtcTime {
             flags: r.u8()?,
         })
     }
+
+    /// flags bit 0: time information is valid.
+    pub fn is_time_info_valid(&self) -> bool { self.flags & (1 << 0) != 0 }
+    /// flags bit 1: UTC offset is valid.
+    pub fn is_utc_offset_valid(&self) -> bool { self.flags & (1 << 1) != 0 }
 }
 
 impl fmt::Display for UtcTime {
@@ -885,28 +1705,76 @@ impl fmt::Display for UtcTime {
 // ---------------------------------------------------------------------------
 
 /// Optional variance/covariance extension (present when record length > 42).
-#[derive(Debug)]
+///
+/// | Offset | Size | Type | Field |
+/// |--------|------|------|-------|
+/// | 42 | 4 | f32 | Pitch variance \[rad^2\] |
+/// | 46 | 4 | f32 | Yaw variance \[rad^2\] |
+/// | 50 | 4 | f32 | Roll variance \[rad^2\] |
+/// | 54 | 4 | f32 | Pitch-Yaw covariance \[rad^2\] |
+/// | 58 | 4 | f32 | Pitch-Roll covariance \[rad^2\] |
+/// | 62 | 4 | f32 | Yaw-Roll covariance \[rad^2\] |
+/// | 66 | 4 | f32 | Range variance \[m^2\] |
+#[derive(Debug, Clone, Copy, PartialEq)]
+#[cfg_attr(feature = "defmt", derive(defmt::Format))]
 pub struct AttitudeVariance {
+    /// Pitch variance \[rad^2\].
     pub pitch_var_rad2: f32,
+    /// Yaw variance \[rad^2\].
     pub yaw_var_rad2: f32,
+    /// Roll variance \[rad^2\].
     pub roll_var_rad2: f32,
+    /// Pitch-Yaw covariance \[rad^2\].
     pub pitch_yaw_covar_rad2: f32,
+    /// Pitch-Roll covariance \[rad^2\].
     pub pitch_roll_covar_rad2: f32,
+    /// Yaw-Roll covariance \[rad^2\].
     pub yaw_roll_covar_rad2: f32,
+    /// Range variance \[m^2\].
     pub range_var_m2: f32,
 }
 
-#[derive(Debug)]
+/// GSOF Record Type 27 — Attitude Information
+///
+/// | Offset | Size | Type | Field |
+/// |--------|------|------|-------|
+/// | 0 | 4 | u32 | GPS time \[ms\] |
+/// | 4 | 1 | u8 | Attitude flags |
+/// | 5 | 1 | u8 | Number of SVs |
+/// | 6 | 1 | u8 | Computation mode |
+/// | 7 | 1 | u8 | Reserved |
+/// | 8 | 8 | f64 | Pitch \[rad\] |
+/// | 16 | 8 | f64 | Yaw \[rad\] |
+/// | 24 | 8 | f64 | Roll \[rad\] |
+/// | 32 | 8 | f64 | Master-slave range \[m\] |
+/// | 40 | 2 | u16 | PDOP * 10 |
+/// | 42-69 | 28 | 7xf32 | Variance (optional) |
+///
+/// flags bits:
+///   0: calibrated, 1: pitch valid, 2: yaw valid, 3: roll valid,
+///   4: scalar valid, 5: diag valid, 6: slave static, 7: error stats valid
+#[derive(Debug, Clone, Copy, PartialEq)]
+#[cfg_attr(feature = "defmt", derive(defmt::Format))]
 pub struct AttitudeInfo {
+    /// GPS time of week \[s\] (from ms / 1000.0).
     pub gps_time_s: f64,
+    /// Attitude flags byte.
     pub flags: u8,
+    /// Number of SVs used.
     pub num_svs: u8,
+    /// Computation mode.
     pub mode: u8,
+    /// Pitch \[deg\] (converted from radians on parse).
     pub pitch_deg: f64,
+    /// Yaw \[deg\] (converted from radians on parse).
     pub yaw_deg: f64,
+    /// Roll \[deg\] (converted from radians on parse).
     pub roll_deg: f64,
+    /// Master-slave range \[m\].
     pub range_m: f64,
+    /// Position dilution of precision.
     pub pdop: f64,
+    /// Variance/covariance extension (present when record length > 42).
     pub variance: Option<AttitudeVariance>,
 }
 
@@ -952,6 +1820,23 @@ impl AttitudeInfo {
             variance,
         })
     }
+
+    /// flags bit 0: attitude is calibrated.
+    pub fn is_calibrated(&self) -> bool { self.flags & (1 << 0) != 0 }
+    /// flags bit 1: pitch value is valid.
+    pub fn is_pitch_valid(&self) -> bool { self.flags & (1 << 1) != 0 }
+    /// flags bit 2: yaw value is valid.
+    pub fn is_yaw_valid(&self) -> bool { self.flags & (1 << 2) != 0 }
+    /// flags bit 3: roll value is valid.
+    pub fn is_roll_valid(&self) -> bool { self.flags & (1 << 3) != 0 }
+    /// flags bit 4: scalar value is valid.
+    pub fn is_scalar_valid(&self) -> bool { self.flags & (1 << 4) != 0 }
+    /// flags bit 5: diagnostic is valid.
+    pub fn is_diag_valid(&self) -> bool { self.flags & (1 << 5) != 0 }
+    /// flags bit 6: slave antenna is static.
+    pub fn is_slave_static(&self) -> bool { self.flags & (1 << 6) != 0 }
+    /// flags bit 7: error statistics are valid.
+    pub fn is_err_stats_valid(&self) -> bool { self.flags & (1 << 7) != 0 }
 }
 
 impl fmt::Display for AttitudeInfo {
@@ -994,16 +1879,51 @@ impl fmt::Display for AttitudeInfo {
 // Type 33 — All Brief SV Info (multi-constellation)
 // ---------------------------------------------------------------------------
 
-#[derive(Debug)]
+/// Individual SV entry in All Brief SV Info (Type 33).
+///
+/// | Offset | Size | Type | Field |
+/// |--------|------|------|-------|
+/// | 0 | 1 | u8 | PRN |
+/// | 1 | 1 | u8 | Satellite system |
+/// | 2 | 1 | u8 | flags1 |
+/// | 3 | 1 | u8 | flags2 |
+///
+/// flags1 bits:
+///   0: above horizon, 1: assigned to channel, 2: tracked
+#[derive(Debug, Clone, Copy, PartialEq)]
+#[cfg_attr(feature = "defmt", derive(defmt::Format))]
 pub struct AllBriefSv {
+    /// Satellite PRN.
     pub prn: u8,
+    /// Satellite system identifier.
     pub system: u8,
+    /// SV flags byte 1.
     pub flags1: u8,
+    /// SV flags byte 2.
     pub flags2: u8,
 }
 
-#[derive(Debug)]
+impl AllBriefSv {
+    /// flags1 bit 0: SV is above the horizon.
+    pub fn is_above_horizon(&self) -> bool { self.flags1 & (1 << 0) != 0 }
+    /// flags1 bit 1: SV is assigned to a channel.
+    pub fn is_assigned_to_channel(&self) -> bool { self.flags1 & (1 << 1) != 0 }
+    /// flags1 bit 2: SV is being tracked.
+    pub fn is_tracked(&self) -> bool { self.flags1 & (1 << 2) != 0 }
+    /// Satellite system type enum.
+    pub fn satellite_type(&self) -> SatelliteType { SatelliteType::from(self.system) }
+}
+
+/// GSOF Record Type 33 — All Brief SV Info (multi-constellation)
+///
+/// | Offset | Size | Type | Field |
+/// |--------|------|------|-------|
+/// | 0 | 1 | u8 | SV count |
+/// | 1 | 4*N | ... | Per-SV data (4 bytes each) |
+#[derive(Debug, Clone, PartialEq)]
+#[cfg_attr(feature = "defmt", derive(defmt::Format))]
 pub struct AllBriefSvInfo {
+    /// Collection of brief SV entries.
     pub svs: heapless::Vec<AllBriefSv, 64>,
 }
 
@@ -1065,19 +1985,79 @@ impl fmt::Display for AllBriefSvInfo {
 // Type 34 — All Detailed SV Info (multi-constellation)
 // ---------------------------------------------------------------------------
 
-#[derive(Debug)]
+/// Individual SV entry in All Detailed SV Info (Type 34).
+///
+/// | Offset | Size | Type | Field |
+/// |--------|------|------|-------|
+/// | 0 | 1 | u8 | PRN |
+/// | 1 | 1 | u8 | Satellite system |
+/// | 2 | 1 | u8 | flags1 |
+/// | 3 | 1 | u8 | flags2 |
+/// | 4 | 1 | u8 | Elevation \[deg\] |
+/// | 5 | 2 | u16 | Azimuth \[deg\] |
+/// | 7 | 3 | \[u8;3\] | SNR (L1/E1, L2/N/A, L5/E5/G1P) \[dB-Hz * 4\] |
+///
+/// flags1 bits:
+///   0: above horizon, 1: assigned to channel, 2: tracked single freq,
+///   3: tracked dual freq, 4: reported at base L1, 5: reported at base L2,
+///   6: used in position, 7: used in RTK
+///
+/// flags2 bits:
+///   0: tracking P-code L1, 1: tracking P-code L2
+#[derive(Debug, Clone, Copy, PartialEq)]
+#[cfg_attr(feature = "defmt", derive(defmt::Format))]
 pub struct AllDetailedSv {
+    /// Satellite PRN.
     pub prn: u8,
+    /// Satellite system identifier.
     pub system: u8,
+    /// SV flags byte 1.
     pub flags1: u8,
+    /// SV flags byte 2.
     pub flags2: u8,
+    /// Elevation angle \[deg\].
     pub elevation_deg: u8,
+    /// Azimuth angle \[deg\].
     pub azimuth_deg: u16,
-    pub snr: [u8; 3], // L1/E1, L2/N/A, L5/E5/G1P
+    /// SNR values \[dB-Hz * 4\]: L1/E1, L2/N/A, L5/E5/G1P.
+    pub snr: [u8; 3],
 }
 
-#[derive(Debug)]
+impl AllDetailedSv {
+    /// flags1 bit 0: SV is above the horizon.
+    pub fn is_above_horizon(&self) -> bool { self.flags1 & (1 << 0) != 0 }
+    /// flags1 bit 1: SV is assigned to a channel.
+    pub fn is_assigned_to_channel(&self) -> bool { self.flags1 & (1 << 1) != 0 }
+    /// flags1 bit 2: SV is tracked on single frequency.
+    pub fn is_tracked_single_freq(&self) -> bool { self.flags1 & (1 << 2) != 0 }
+    /// flags1 bit 3: SV is tracked on dual frequency.
+    pub fn is_tracked_dual_freq(&self) -> bool { self.flags1 & (1 << 3) != 0 }
+    /// flags1 bit 4: SV is reported at base station L1.
+    pub fn is_reported_at_base_l1(&self) -> bool { self.flags1 & (1 << 4) != 0 }
+    /// flags1 bit 5: SV is reported at base station L2.
+    pub fn is_reported_at_base_l2(&self) -> bool { self.flags1 & (1 << 5) != 0 }
+    /// flags1 bit 6: SV is used in position solution.
+    pub fn is_used_in_position(&self) -> bool { self.flags1 & (1 << 6) != 0 }
+    /// flags1 bit 7: SV is used in RTK solution.
+    pub fn is_used_in_rtk(&self) -> bool { self.flags1 & (1 << 7) != 0 }
+    /// flags2 bit 0: tracking P-code on L1.
+    pub fn is_tracking_p_code_l1(&self) -> bool { self.flags2 & (1 << 0) != 0 }
+    /// flags2 bit 1: tracking P-code on L2.
+    pub fn is_tracking_p_code_l2(&self) -> bool { self.flags2 & (1 << 1) != 0 }
+    /// Satellite system type enum.
+    pub fn satellite_type(&self) -> SatelliteType { SatelliteType::from(self.system) }
+}
+
+/// GSOF Record Type 34 — All Detailed SV Info (multi-constellation)
+///
+/// | Offset | Size | Type | Field |
+/// |--------|------|------|-------|
+/// | 0 | 1 | u8 | SV count |
+/// | 1 | 10*N | ... | Per-SV data (10 bytes each) |
+#[derive(Debug, Clone, PartialEq)]
+#[cfg_attr(feature = "defmt", derive(defmt::Format))]
 pub struct AllDetailedSvInfo {
+    /// Collection of detailed SV entries.
     pub svs: heapless::Vec<AllDetailedSv, 64>,
 }
 
@@ -1154,13 +2134,33 @@ impl fmt::Display for AllDetailedSvInfo {
 // Type 35 — Received Base Info
 // ---------------------------------------------------------------------------
 
-#[derive(Debug)]
+/// GSOF Record Type 35 — Received Base Information
+///
+/// | Offset | Size | Type | Field |
+/// |--------|------|------|-------|
+/// | 0 | 1 | u8 | Flags |
+/// | 1 | 8 | \[u8;8\] | Base name (ASCII) |
+/// | 9 | 2 | u16 | Base station ID |
+/// | 11 | 8 | f64 | Latitude \[rad\] |
+/// | 19 | 8 | f64 | Longitude \[rad\] |
+/// | 27 | 8 | f64 | Height above ellipsoid \[m\] |
+///
+/// flags:
+///   bits 0-2: version number, bit 3: base info valid
+#[derive(Debug, Clone, Copy, PartialEq)]
+#[cfg_attr(feature = "defmt", derive(defmt::Format))]
 pub struct ReceivedBaseInfo {
+    /// Flags byte.
     pub flags: u8,
+    /// Base station name (8 ASCII bytes).
     pub name: [u8; 8],
+    /// Base station ID.
     pub base_id: u16,
+    /// Latitude \[deg\] (converted from radians on parse).
     pub lat_deg: f64,
+    /// Longitude \[deg\] (converted from radians on parse).
     pub lon_deg: f64,
+    /// Height above ellipsoid \[m\].
     pub height_m: f64,
 }
 
@@ -1182,6 +2182,11 @@ impl ReceivedBaseInfo {
     pub fn name_str(&self) -> &str {
         core::str::from_utf8(&self.name).unwrap_or("????????")
     }
+
+    /// Version number from bits 0-2 of flags.
+    pub fn version_number(&self) -> u8 { self.flags & 0x07 }
+    /// flags bit 3: base information is valid.
+    pub fn is_base_info_valid(&self) -> bool { self.flags & (1 << 3) != 0 }
 }
 
 impl fmt::Display for ReceivedBaseInfo {
@@ -1204,9 +2209,18 @@ impl fmt::Display for ReceivedBaseInfo {
 // Type 37 — Battery/Memory Info
 // ---------------------------------------------------------------------------
 
-#[derive(Debug)]
+/// GSOF Record Type 37 — Battery/Memory Information
+///
+/// | Offset | Size | Type | Field |
+/// |--------|------|------|-------|
+/// | 0 | 2 | u16 | Battery capacity \[%\] |
+/// | 2 | 8 | f64 | Remaining time \[s\] |
+#[derive(Debug, Clone, Copy, PartialEq)]
+#[cfg_attr(feature = "defmt", derive(defmt::Format))]
 pub struct BatteryMemoryInfo {
+    /// Battery capacity \[%\].
     pub battery_capacity: u16,
+    /// Remaining battery time \[s\].
     pub remaining_time: f64,
 }
 
@@ -1235,38 +2249,85 @@ impl fmt::Display for BatteryMemoryInfo {
 // Type 38 — Position Type Info
 // ---------------------------------------------------------------------------
 
-/// Firmware >=4.40 extension fields.
-#[derive(Debug)]
+/// Firmware >=4.40 extension fields for PositionTypeInfo.
+///
+/// | Offset | Size | Type | Field |
+/// |--------|------|------|-------|
+/// | 4 | 1 | u8 | Solution flags |
+/// | 5 | 1 | u8 | RTK condition code |
+/// | 6 | 4 | f32 | Correction age \[s\] |
+/// | 10 | 1 | u8 | Network flags |
+/// | 11 | 1 | u8 | Network flags 2 |
+#[derive(Debug, Clone, Copy, PartialEq)]
+#[cfg_attr(feature = "defmt", derive(defmt::Format))]
 pub struct PositionTypeExt440 {
+    /// Solution flags byte.
     pub solution_flags: u8,
+    /// RTK condition code.
     pub rtk_condition: u8,
+    /// Correction age \[s\].
     pub correction_age: f32,
+    /// Network flags byte 1.
     pub network_flags: u8,
+    /// Network flags byte 2.
     pub network_flags2: u8,
 }
 
-/// Firmware >=4.82 extension fields.
-#[derive(Debug)]
+/// Firmware >=4.82 extension fields for PositionTypeInfo.
+///
+/// | Offset | Size | Type | Field |
+/// |--------|------|------|-------|
+/// | 12 | 1 | u8 | Frame flag |
+/// | 13 | 2 | i16 | ITRF epoch |
+/// | 15 | 1 | u8 | Tectonic plate |
+/// | 16 | 4 | i32 | RTX RAM subscription minutes left |
+#[derive(Debug, Clone, Copy, PartialEq)]
+#[cfg_attr(feature = "defmt", derive(defmt::Format))]
 pub struct PositionTypeExt482 {
+    /// Reference frame flag.
     pub frame_flag: u8,
+    /// ITRF epoch.
     pub itrf_epoch: i16,
+    /// Tectonic plate identifier.
     pub tectonic_plate: u8,
+    /// RTX RAM subscription minutes remaining.
     pub rtx_ram_sub_minutes_left: i32,
 }
 
-/// Firmware >=4.90 extension fields.
-#[derive(Debug)]
+/// Firmware >=4.90 extension fields for PositionTypeInfo.
+///
+/// | Offset | Size | Type | Field |
+/// |--------|------|------|-------|
+/// | 20 | 1 | u8 | Pole wobble status |
+/// | 21 | 4 | f32 | Pole wobble distance \[m\] |
+#[derive(Debug, Clone, Copy, PartialEq)]
+#[cfg_attr(feature = "defmt", derive(defmt::Format))]
 pub struct PositionTypeExt490 {
+    /// Pole wobble correction status.
     pub pole_wobble_status: u8,
+    /// Pole wobble distance \[m\].
     pub pole_wobble_distance: f32,
 }
 
-#[derive(Debug)]
+/// GSOF Record Type 38 — Position Type Information
+///
+/// | Offset | Size | Type | Field |
+/// |--------|------|------|-------|
+/// | 0 | 4 | f32 | Error scale |
+/// | 4+ | var | ... | Firmware extensions (see ext structs) |
+/// | 25 | 1 | u8 | Position fix type (fw >=4.94) |
+#[derive(Debug, Clone, Copy, PartialEq)]
+#[cfg_attr(feature = "defmt", derive(defmt::Format))]
 pub struct PositionTypeInfo {
+    /// Error scale factor.
     pub error_scale: f32,
+    /// Firmware >=4.40 extension.
     pub ext_440: Option<PositionTypeExt440>,
+    /// Firmware >=4.82 extension.
     pub ext_482: Option<PositionTypeExt482>,
+    /// Firmware >=4.90 extension.
     pub ext_490: Option<PositionTypeExt490>,
+    /// Position fix type (firmware >=4.94).
     pub position_fix_type: Option<u8>,
 }
 
@@ -1321,6 +2382,81 @@ impl PositionTypeInfo {
             position_fix_type,
         })
     }
+
+    /// solution_flags bit 0: wide area solution.
+    pub fn is_wide_area_solution(&self) -> bool {
+        self.ext_440.map_or(false, |e| e.solution_flags & (1 << 0) != 0)
+    }
+    /// solution_flags bit 1: RTK fix solution.
+    pub fn is_rtk_fix_solution(&self) -> bool {
+        self.ext_440.map_or(false, |e| e.solution_flags & (1 << 1) != 0)
+    }
+    /// Solution integrity from bits 2-3 of solution_flags.
+    pub fn solution_integrity(&self) -> SolutionIntegrity {
+        self.ext_440.map_or(SolutionIntegrity::NotChecking, |e| {
+            SolutionIntegrity::from_solution_flags(e.solution_flags)
+        })
+    }
+    /// RTK condition code as enum.
+    pub fn rtk_condition(&self) -> RtkCondition {
+        self.ext_440.map_or(RtkCondition::NewPositionComputed, |e| {
+            RtkCondition::from(e.rtk_condition)
+        })
+    }
+    /// network_flags bit 0: new physical base station.
+    pub fn is_new_physical_base_station(&self) -> bool {
+        self.ext_440.map_or(false, |e| e.network_flags & (1 << 0) != 0)
+    }
+    /// RTCM status from bits 1-2 of network_flags.
+    pub fn rtcm_status(&self) -> RtcmStatus {
+        self.ext_440.map_or(RtcmStatus::NotAvailableOrUnknown, |e| {
+            RtcmStatus::from_network_flags(e.network_flags)
+        })
+    }
+    /// network_flags bit 3: geofence triggered.
+    pub fn is_geofence_triggered(&self) -> bool {
+        self.ext_440.map_or(false, |e| e.network_flags & (1 << 3) != 0)
+    }
+    /// network_flags bit 4: RTK range limit exceeded.
+    pub fn is_rtk_range_limit_exceeded(&self) -> bool {
+        self.ext_440.map_or(false, |e| e.network_flags & (1 << 4) != 0)
+    }
+    /// network_flags bit 5: xFill position.
+    pub fn is_xfill_position(&self) -> bool {
+        self.ext_440.map_or(false, |e| e.network_flags & (1 << 5) != 0)
+    }
+    /// network_flags bit 6: RTX position.
+    pub fn is_rtx_position(&self) -> bool {
+        self.ext_440.map_or(false, |e| e.network_flags & (1 << 6) != 0)
+    }
+    /// network_flags bit 7: RTX or xFill link down.
+    pub fn is_rtx_or_xfill_link_down(&self) -> bool {
+        self.ext_440.map_or(false, |e| e.network_flags & (1 << 7) != 0)
+    }
+    /// network_flags2 bit 0: xFill ready.
+    pub fn is_xfill_ready(&self) -> bool {
+        self.ext_440.map_or(false, |e| e.network_flags2 & (1 << 0) != 0)
+    }
+    /// network_flags2 bit 1: RTX solution in rain.
+    pub fn is_rtx_solution_rain(&self) -> bool {
+        self.ext_440.map_or(false, |e| e.network_flags2 & (1 << 1) != 0)
+    }
+    /// network_flags2 bit 2: xFill RTX offset good.
+    pub fn is_xfill_rtx_offset_good(&self) -> bool {
+        self.ext_440.map_or(false, |e| e.network_flags2 & (1 << 2) != 0)
+    }
+    /// network_flags2 bit 3: CMRxE received.
+    pub fn is_cmrxe_received(&self) -> bool {
+        self.ext_440.map_or(false, |e| e.network_flags2 & (1 << 3) != 0)
+    }
+    /// network_flags2 bit 4: RTX in wet area.
+    pub fn is_rtx_in_wet_area(&self) -> bool {
+        self.ext_440.map_or(false, |e| e.network_flags2 & (1 << 4) != 0)
+    }
+    /// Position fix type as enum.
+    pub fn position_fix_type(&self) -> PositionFix {
+        self.position_fix_type.map_or(PositionFix::None, PositionFix::from)
+    }
 }
 
 impl fmt::Display for PositionTypeInfo {
@@ -1363,29 +2499,76 @@ impl fmt::Display for PositionTypeInfo {
 // Type 40 — L-band Status
 // ---------------------------------------------------------------------------
 
-#[derive(Debug)]
+/// GSOF Record Type 40 — L-band Status (OmniSTAR)
+///
+/// | Offset | Size | Type | Field |
+/// |--------|------|------|-------|
+/// | 0 | 5 | \[u8;5\] | Satellite name (ASCII) |
+/// | 5 | 4 | f32 | Frequency \[Hz\] |
+/// | 9 | 2 | u16 | Bit rate \[bps\] |
+/// | 11 | 4 | f32 | Signal-to-noise ratio \[dB\] |
+/// | 15 | 1 | u8 | HP/XP subscribed engine |
+/// | 16 | 1 | u8 | HP/XP library mode |
+/// | 17 | 1 | u8 | VBS library mode |
+/// | 18 | 1 | u8 | Beam mode (0=manual, 1=auto) |
+/// | 19 | 1 | u8 | OmniSTAR motion state |
+/// | 20 | 4 | f32 | Horizontal precision threshold |
+/// | 24 | 4 | f32 | Vertical precision threshold |
+/// | 28 | 1 | u8 | NMEA encryption (0=disabled, 1=enabled) |
+/// | 29 | 4 | f32 | I/Q ratio |
+/// | 33 | 4 | f32 | Estimated BER |
+/// | 37 | 4 | u32 | Total unique words |
+/// | 41 | 4 | u32 | Total bad unique words |
+/// | 45 | 4 | u32 | Total bad unique word bits |
+/// | 49 | 4 | u32 | Total Viterbi corrections |
+/// | 53 | 4 | u32 | Total bad Viterbi corrections |
+/// | 57 | 4 | u32 | Total bad messages |
+/// | 61 | 1 | u8 | Measured freq valid (optional) |
+/// | 62 | 8 | f64 | Measured frequency \[Hz\] (optional) |
+#[derive(Debug, Clone, Copy, PartialEq)]
+#[cfg_attr(feature = "defmt", derive(defmt::Format))]
 pub struct LbandStatus {
+    /// Satellite name (5 ASCII bytes).
     pub name: [u8; 5],
+    /// Frequency \[Hz\].
     pub freq_hz: f32,
+    /// Bit rate \[bps\].
     pub bit_rate_bps: u16,
+    /// Signal-to-noise ratio \[dB\].
     pub snr: f32,
+    /// HP/XP subscribed engine.
     pub hp_xp_subscribed_engine: u8,
+    /// HP/XP library mode.
     pub hp_xp_library_mode: u8,
+    /// VBS library mode.
     pub vbs_library_mode: u8,
+    /// Beam mode (0=manual, 1=auto).
     pub beam_mode: u8,
+    /// OmniSTAR motion state.
     pub omnistar_motion: u8,
+    /// Horizontal precision threshold.
     pub horiz_prec_thresh: f32,
+    /// Vertical precision threshold.
     pub vert_prec_thresh: f32,
+    /// NMEA encryption state (0=disabled, 1=enabled).
     pub nmea_encryption: u8,
+    /// I/Q ratio.
     pub iq_ratio: f32,
+    /// Estimated bit error rate.
     pub est_ber: f32,
+    /// Total unique words received.
     pub total_uw: u32,
+    /// Total bad unique words.
     pub total_bad_uw: u32,
+    /// Total bad unique word bits.
     pub total_bad_uw_bits: u32,
+    /// Total Viterbi corrections.
     pub total_viterbi: u32,
+    /// Total bad Viterbi corrections.
     pub total_bad_viterbi: u32,
+    /// Total bad messages.
     pub total_bad_messages: u32,
-    /// Only present when record length > 61.
+    /// Measured frequency (valid_flag, freq_hz), present when record length > 61.
     pub measured_freq: Option<(u8, f64)>,
 }
 
@@ -1445,6 +2628,19 @@ impl LbandStatus {
     pub fn name_str(&self) -> &str {
         core::str::from_utf8(&self.name).unwrap_or("?????")
     }
+
+    /// HP/XP subscribed engine as enum.
+    pub fn hp_xp_engine(&self) -> HpXpEngine { HpXpEngine::from(self.hp_xp_subscribed_engine) }
+    /// HP/XP library mode as enum.
+    pub fn hp_xp_library_mode(&self) -> HpXpLibraryMode { HpXpLibraryMode::from(self.hp_xp_library_mode) }
+    /// VBS library mode as enum.
+    pub fn vbs_library_mode(&self) -> VbsLibraryMode { VbsLibraryMode::from(self.vbs_library_mode) }
+    /// Beam mode as enum.
+    pub fn beam_mode(&self) -> BeamMode { BeamMode::from(self.beam_mode) }
+    /// Motion state as enum.
+    pub fn motion_state(&self) -> MotionState { MotionState::from(self.omnistar_motion) }
+    /// NMEA encryption state as enum.
+    pub fn nmea_encryption_state(&self) -> NmeaEncryptionState { NmeaEncryptionState::from(self.nmea_encryption) }
 }
 
 impl fmt::Display for LbandStatus {
@@ -1503,13 +2699,30 @@ impl fmt::Display for LbandStatus {
 // Type 41 — Base Position and Quality
 // ---------------------------------------------------------------------------
 
-#[derive(Debug)]
+/// GSOF Record Type 41 — Base Position and Quality
+///
+/// | Offset | Size | Type | Field |
+/// |--------|------|------|-------|
+/// | 0 | 4 | u32 | GPS time of week \[ms\] |
+/// | 4 | 2 | u16 | GPS week number |
+/// | 6 | 8 | f64 | Latitude \[rad\] |
+/// | 14 | 8 | f64 | Longitude \[rad\] |
+/// | 22 | 8 | f64 | Height above ellipsoid \[m\] |
+/// | 30 | 1 | u8 | Quality indicator |
+#[derive(Debug, Clone, Copy, PartialEq)]
+#[cfg_attr(feature = "defmt", derive(defmt::Format))]
 pub struct BasePositionQuality {
+    /// GPS time of week \[ms\].
     pub gps_time_ms: u32,
+    /// GPS week number.
     pub gps_week: u16,
+    /// Latitude \[deg\] (converted from radians on parse).
     pub lat_deg: f64,
+    /// Longitude \[deg\] (converted from radians on parse).
     pub lon_deg: f64,
+    /// Height above ellipsoid \[m\].
     pub height_m: f64,
+    /// Quality indicator.
     pub quality: u8,
 }
 
@@ -1525,6 +2738,9 @@ impl BasePositionQuality {
             quality: r.u8()?,
         })
     }
+
+    /// Base quality indicator as enum.
+    pub fn base_quality(&self) -> BaseQuality { BaseQuality::from(self.quality) }
 }
 
 impl fmt::Display for BasePositionQuality {
@@ -1547,28 +2763,75 @@ impl fmt::Display for BasePositionQuality {
 // Type 49 — INS Full Navigation Info
 // ---------------------------------------------------------------------------
 
-#[derive(Debug)]
+/// GSOF Record Type 49 — INS Full Navigation Information
+///
+/// | Offset | Size | Type | Field |
+/// |--------|------|------|-------|
+/// | 0 | 2 | u16 | GPS week number |
+/// | 2 | 4 | u32 | GPS time of week \[ms\] |
+/// | 6 | 1 | u8 | IMU alignment status |
+/// | 7 | 1 | u8 | GNSS quality indicator |
+/// | 8 | 8 | f64 | Latitude \[deg\] |
+/// | 16 | 8 | f64 | Longitude \[deg\] |
+/// | 24 | 8 | f64 | Altitude \[m\] |
+/// | 32 | 4 | f32 | North velocity \[m/s\] |
+/// | 36 | 4 | f32 | East velocity \[m/s\] |
+/// | 40 | 4 | f32 | Down velocity \[m/s\] |
+/// | 44 | 4 | f32 | Total speed \[m/s\] |
+/// | 48 | 8 | f64 | Roll \[deg\] |
+/// | 56 | 8 | f64 | Pitch \[deg\] |
+/// | 64 | 8 | f64 | Heading \[deg\] |
+/// | 72 | 8 | f64 | Track angle \[deg\] |
+/// | 80 | 4 | f32 | Angular rate X \[rad/s\] |
+/// | 84 | 4 | f32 | Angular rate Y \[rad/s\] |
+/// | 88 | 4 | f32 | Angular rate Z \[rad/s\] |
+/// | 92 | 4 | f32 | Acceleration X \[m/s^2\] |
+/// | 96 | 4 | f32 | Acceleration Y \[m/s^2\] |
+/// | 100 | 4 | f32 | Acceleration Z \[m/s^2\] |
+#[derive(Debug, Clone, Copy, PartialEq)]
+#[cfg_attr(feature = "defmt", derive(defmt::Format))]
 pub struct InsFullNav {
+    /// GPS week number.
     pub gps_week: u16,
+    /// GPS time of week \[ms\].
     pub gps_time_ms: u32,
+    /// IMU alignment status.
     pub imu_alignment_status: u8,
+    /// GNSS quality indicator.
     pub gps_quality: u8,
+    /// Latitude \[deg\].
     pub lat_deg: f64,
+    /// Longitude \[deg\].
     pub lon_deg: f64,
+    /// Altitude \[m\].
     pub alt_m: f64,
+    /// North velocity \[m/s\].
     pub north_vel_ms: f32,
+    /// East velocity \[m/s\].
     pub east_vel_ms: f32,
+    /// Down velocity \[m/s\].
     pub down_vel_ms: f32,
+    /// Total speed \[m/s\].
     pub total_speed_ms: f32,
+    /// Roll \[deg\].
     pub roll_deg: f64,
+    /// Pitch \[deg\].
     pub pitch_deg: f64,
+    /// Heading \[deg\].
     pub heading_deg: f64,
+    /// Track angle \[deg\].
     pub track_angle_deg: f64,
+    /// Angular rate X \[rad/s\].
     pub angular_rate_x: f32,
+    /// Angular rate Y \[rad/s\].
     pub angular_rate_y: f32,
+    /// Angular rate Z \[rad/s\].
     pub angular_rate_z: f32,
+    /// Acceleration X \[m/s^2\].
     pub accel_x: f32,
+    /// Acceleration Y \[m/s^2\].
     pub accel_y: f32,
+    /// Acceleration Z \[m/s^2\].
     pub accel_z: f32,
 }
 
@@ -1599,6 +2862,11 @@ impl InsFullNav {
             accel_z: r.f32()?,
         })
     }
+
+    /// IMU alignment status as enum.
+    pub fn alignment_status(&self) -> ImuAlignmentStatus { ImuAlignmentStatus::from(self.imu_alignment_status) }
+    /// GNSS quality as enum.
+    pub fn gnss_quality(&self) -> GnssQuality { GnssQuality::from(self.gps_quality) }
 }
 
 impl fmt::Display for InsFullNav {
@@ -1641,20 +2909,51 @@ impl fmt::Display for InsFullNav {
 // Type 50 — INS RMS Info
 // ---------------------------------------------------------------------------
 
-#[derive(Debug)]
+/// GSOF Record Type 50 — INS RMS Information
+///
+/// | Offset | Size | Type | Field |
+/// |--------|------|------|-------|
+/// | 0 | 2 | u16 | GPS week number |
+/// | 2 | 4 | u32 | GPS time of week \[ms\] |
+/// | 6 | 1 | u8 | IMU alignment status |
+/// | 7 | 1 | u8 | GNSS quality indicator |
+/// | 8 | 4 | f32 | North position RMS \[m\] |
+/// | 12 | 4 | f32 | East position RMS \[m\] |
+/// | 16 | 4 | f32 | Down position RMS \[m\] |
+/// | 20 | 4 | f32 | North velocity RMS \[m/s\] |
+/// | 24 | 4 | f32 | East velocity RMS \[m/s\] |
+/// | 28 | 4 | f32 | Down velocity RMS \[m/s\] |
+/// | 32 | 4 | f32 | Roll RMS \[deg\] |
+/// | 36 | 4 | f32 | Pitch RMS \[deg\] |
+/// | 40 | 4 | f32 | Heading RMS \[deg\] |
+#[derive(Debug, Clone, Copy, PartialEq)]
+#[cfg_attr(feature = "defmt", derive(defmt::Format))]
 pub struct InsRmsInfo {
+    /// GPS week number.
     pub gps_week: u16,
+    /// GPS time of week \[ms\].
     pub gps_time_ms: u32,
+    /// IMU alignment status.
     pub imu_alignment_status: u8,
+    /// GNSS quality indicator.
     pub gps_quality: u8,
+    /// North position RMS \[m\].
     pub north_pos_rms: f32,
+    /// East position RMS \[m\].
     pub east_pos_rms: f32,
+    /// Down position RMS \[m\].
     pub down_pos_rms: f32,
+    /// North velocity RMS \[m/s\].
     pub north_vel_rms: f32,
+    /// East velocity RMS \[m/s\].
     pub east_vel_rms: f32,
+    /// Down velocity RMS \[m/s\].
     pub down_vel_rms: f32,
+    /// Roll RMS \[deg\].
     pub roll_rms_deg: f32,
+    /// Pitch RMS \[deg\].
     pub pitch_rms_deg: f32,
+    /// Heading RMS \[deg\].
     pub heading_rms_deg: f32,
 }
 
@@ -1677,6 +2976,11 @@ impl InsRmsInfo {
             heading_rms_deg: r.f32()?,
         })
     }
+
+    /// IMU alignment status as enum.
+    pub fn alignment_status(&self) -> ImuAlignmentStatus { ImuAlignmentStatus::from(self.imu_alignment_status) }
+    /// GNSS quality as enum.
+    pub fn gnss_quality(&self) -> GnssQuality { GnssQuality::from(self.gps_quality) }
 }
 
 impl fmt::Display for InsRmsInfo {
@@ -1709,17 +3013,40 @@ impl fmt::Display for InsRmsInfo {
 // Type 52 — DMI Raw Data
 // ---------------------------------------------------------------------------
 
-#[derive(Debug)]
+/// Individual DMI measurement entry (Type 52).
+///
+/// | Offset | Size | Type | Field |
+/// |--------|------|------|-------|
+/// | 0 | 2 | u16 | Time offset \[ms\] |
+/// | 2 | 4 | u32 | Absolute distance count |
+/// | 6 | 4 | i32 | Up/Down distance count |
+#[derive(Debug, Clone, Copy, PartialEq)]
+#[cfg_attr(feature = "defmt", derive(defmt::Format))]
 pub struct DmiMeasurement {
+    /// Time offset from GPS time \[ms\].
     pub time_offset_ms: u16,
+    /// Absolute distance count.
     pub abs_dist_count: u32,
+    /// Up/Down distance count.
     pub ud_dist_count: i32,
 }
 
-#[derive(Debug)]
+/// GSOF Record Type 52 — DMI Raw Data
+///
+/// | Offset | Size | Type | Field |
+/// |--------|------|------|-------|
+/// | 0 | 2 | u16 | GPS week number |
+/// | 2 | 4 | u32 | GPS time of week \[ms\] |
+/// | 6 | 1 | u8 | Measurement count |
+/// | 7 | 10*N | ... | Per-measurement data (10 bytes each) |
+#[derive(Debug, Clone, PartialEq)]
+#[cfg_attr(feature = "defmt", derive(defmt::Format))]
 pub struct DmiRawData {
+    /// GPS week number.
     pub gps_week: u16,
+    /// GPS time of week \[ms\].
     pub gps_time_ms: u32,
+    /// Collection of DMI measurements.
     pub measurements: heapless::Vec<DmiMeasurement, 16>,
 }
 
@@ -1792,29 +3119,78 @@ impl fmt::Display for DmiRawData {
 // Type 63 — INS VNAV Full Navigation Info (Krypton)
 // ---------------------------------------------------------------------------
 
-#[derive(Debug)]
+/// GSOF Record Type 63 — INS VNAV Full Navigation Information (Krypton)
+///
+/// | Offset | Size | Type | Field |
+/// |--------|------|------|-------|
+/// | 0 | 2 | u16 | GPS week number |
+/// | 2 | 4 | u32 | GPS time of week \[ms\] |
+/// | 6 | 1 | u8 | IMU alignment status |
+/// | 7 | 1 | u8 | GNSS quality indicator |
+/// | 8 | 8 | f64 | Latitude \[deg\] |
+/// | 16 | 8 | f64 | Longitude \[deg\] |
+/// | 24 | 8 | f64 | Altitude \[m\] |
+/// | 32 | 4 | f32 | North velocity \[m/s\] |
+/// | 36 | 4 | f32 | East velocity \[m/s\] |
+/// | 40 | 4 | f32 | Down velocity \[m/s\] |
+/// | 44 | 4 | f32 | Total speed \[m/s\] |
+/// | 48 | 8 | f64 | Roll \[deg\] |
+/// | 56 | 8 | f64 | Pitch \[deg\] |
+/// | 64 | 8 | f64 | Heading \[deg\] |
+/// | 72 | 8 | f64 | Track angle \[deg\] |
+/// | 80 | 4 | f32 | Angular rate X \[rad/s\] |
+/// | 84 | 4 | f32 | Angular rate Y \[rad/s\] |
+/// | 88 | 4 | f32 | Angular rate Z \[rad/s\] |
+/// | 92 | 4 | f32 | Acceleration X \[m/s^2\] |
+/// | 96 | 4 | f32 | Acceleration Y \[m/s^2\] |
+/// | 100 | 4 | f32 | Acceleration Z \[m/s^2\] |
+/// | 104 | 8 | f64 | Heave \[m\] |
+#[derive(Debug, Clone, Copy, PartialEq)]
+#[cfg_attr(feature = "defmt", derive(defmt::Format))]
 pub struct InsVnavFullNav {
+    /// GPS week number.
     pub gps_week: u16,
+    /// GPS time of week \[ms\].
     pub gps_time_ms: u32,
+    /// IMU alignment status.
     pub imu_alignment_status: u8,
+    /// GNSS quality indicator.
     pub gps_quality: u8,
+    /// Latitude \[deg\].
     pub lat_deg: f64,
+    /// Longitude \[deg\].
     pub lon_deg: f64,
+    /// Altitude \[m\].
     pub alt_m: f64,
+    /// North velocity \[m/s\].
     pub north_vel_ms: f32,
+    /// East velocity \[m/s\].
     pub east_vel_ms: f32,
+    /// Down velocity \[m/s\].
     pub down_vel_ms: f32,
+    /// Total speed \[m/s\].
     pub total_speed_ms: f32,
+    /// Roll \[deg\].
     pub roll_deg: f64,
+    /// Pitch \[deg\].
     pub pitch_deg: f64,
+    /// Heading \[deg\].
     pub heading_deg: f64,
+    /// Track angle \[deg\].
     pub track_angle_deg: f64,
+    /// Angular rate X \[rad/s\].
     pub angular_rate_x: f32,
+    /// Angular rate Y \[rad/s\].
     pub angular_rate_y: f32,
+    /// Angular rate Z \[rad/s\].
     pub angular_rate_z: f32,
+    /// Acceleration X \[m/s^2\].
     pub accel_x: f32,
+    /// Acceleration Y \[m/s^2\].
     pub accel_y: f32,
+    /// Acceleration Z \[m/s^2\].
     pub accel_z: f32,
+    /// Heave \[m\].
     pub heave_m: f64,
 }
 
@@ -1846,6 +3222,11 @@ impl InsVnavFullNav {
             heave_m: r.f64()?,
         })
     }
+
+    /// IMU alignment status as enum.
+    pub fn alignment_status(&self) -> ImuAlignmentStatus { ImuAlignmentStatus::from(self.imu_alignment_status) }
+    /// GNSS quality as enum.
+    pub fn gnss_quality(&self) -> GnssQuality { GnssQuality::from(self.gps_quality) }
 }
 
 impl fmt::Display for InsVnavFullNav {
@@ -1889,21 +3270,54 @@ impl fmt::Display for InsVnavFullNav {
 // Type 64 — INS VNAV RMS Info (Krypton)
 // ---------------------------------------------------------------------------
 
-#[derive(Debug)]
+/// GSOF Record Type 64 — INS VNAV RMS Information (Krypton)
+///
+/// | Offset | Size | Type | Field |
+/// |--------|------|------|-------|
+/// | 0 | 2 | u16 | GPS week number |
+/// | 2 | 4 | u32 | GPS time of week \[ms\] |
+/// | 6 | 1 | u8 | IMU alignment status |
+/// | 7 | 1 | u8 | GNSS quality indicator |
+/// | 8 | 4 | f32 | North position RMS \[m\] |
+/// | 12 | 4 | f32 | East position RMS \[m\] |
+/// | 16 | 4 | f32 | Down position RMS \[m\] |
+/// | 20 | 4 | f32 | North velocity RMS \[m/s\] |
+/// | 24 | 4 | f32 | East velocity RMS \[m/s\] |
+/// | 28 | 4 | f32 | Down velocity RMS \[m/s\] |
+/// | 32 | 4 | f32 | Roll RMS \[deg\] |
+/// | 36 | 4 | f32 | Pitch RMS \[deg\] |
+/// | 40 | 4 | f32 | Heading RMS \[deg\] |
+/// | 44 | 4 | f32 | Heave RMS \[m\] |
+#[derive(Debug, Clone, Copy, PartialEq)]
+#[cfg_attr(feature = "defmt", derive(defmt::Format))]
 pub struct InsVnavRmsInfo {
+    /// GPS week number.
     pub gps_week: u16,
+    /// GPS time of week \[ms\].
     pub gps_time_ms: u32,
+    /// IMU alignment status.
     pub imu_alignment_status: u8,
+    /// GNSS quality indicator.
     pub gps_quality: u8,
+    /// North position RMS \[m\].
     pub north_pos_rms: f32,
+    /// East position RMS \[m\].
     pub east_pos_rms: f32,
+    /// Down position RMS \[m\].
     pub down_pos_rms: f32,
+    /// North velocity RMS \[m/s\].
     pub north_vel_rms: f32,
+    /// East velocity RMS \[m/s\].
     pub east_vel_rms: f32,
+    /// Down velocity RMS \[m/s\].
     pub down_vel_rms: f32,
+    /// Roll RMS \[deg\].
     pub roll_rms_deg: f32,
+    /// Pitch RMS \[deg\].
     pub pitch_rms_deg: f32,
+    /// Heading RMS \[deg\].
     pub heading_rms_deg: f32,
+    /// Heave RMS \[m\].
     pub heave_rms_m: f32,
 }
 
@@ -1927,6 +3341,11 @@ impl InsVnavRmsInfo {
             heave_rms_m: r.f32()?,
         })
     }
+
+    /// IMU alignment status as enum.
+    pub fn alignment_status(&self) -> ImuAlignmentStatus { ImuAlignmentStatus::from(self.imu_alignment_status) }
+    /// GNSS quality as enum.
+    pub fn gnss_quality(&self) -> GnssQuality { GnssQuality::from(self.gps_quality) }
 }
 
 impl fmt::Display for InsVnavRmsInfo {
@@ -1959,10 +3378,10 @@ impl fmt::Display for InsVnavRmsInfo {
 // Top-level GSOF record dispatcher
 // ---------------------------------------------------------------------------
 
-fn unknown(gsof_type: u8, data: &[u8]) -> GsofRecord {
+fn unknown(gsof_type: u8, length: u8) -> GsofRecord {
     GsofRecord::Unknown {
         gsof_type,
-        data: heapless::Vec::from_slice(data).unwrap_or_default(),
+        length,
     }
 }
 
@@ -1972,89 +3391,89 @@ pub fn parse_gsof_record(gsof_type: u8, data: &[u8]) -> GsofRecord {
     match gsof_type {
         1 => PositionTime::parse(data)
             .map(GsofRecord::PositionTime)
-            .unwrap_or_else(|_| unknown(gsof_type, data)),
+            .unwrap_or_else(|_| unknown(gsof_type, data.len() as u8)),
         2 => LatLonHeight::parse(data)
             .map(GsofRecord::LatLonHeight)
-            .unwrap_or_else(|_| unknown(gsof_type, data)),
+            .unwrap_or_else(|_| unknown(gsof_type, data.len() as u8)),
         3 => Ecef::parse(data)
             .map(GsofRecord::Ecef)
-            .unwrap_or_else(|_| unknown(gsof_type, data)),
+            .unwrap_or_else(|_| unknown(gsof_type, data.len() as u8)),
         4 => LocalDatum::parse(data)
             .map(GsofRecord::LocalDatum)
-            .unwrap_or_else(|_| unknown(gsof_type, data)),
+            .unwrap_or_else(|_| unknown(gsof_type, data.len() as u8)),
         6 => EcefDelta::parse(data)
             .map(GsofRecord::EcefDelta)
-            .unwrap_or_else(|_| unknown(gsof_type, data)),
+            .unwrap_or_else(|_| unknown(gsof_type, data.len() as u8)),
         7 => TangentPlaneDelta::parse(data)
             .map(GsofRecord::TangentPlaneDelta)
-            .unwrap_or_else(|_| unknown(gsof_type, data)),
+            .unwrap_or_else(|_| unknown(gsof_type, data.len() as u8)),
         8 => Velocity::parse(data)
             .map(GsofRecord::Velocity)
-            .unwrap_or_else(|_| unknown(gsof_type, data)),
+            .unwrap_or_else(|_| unknown(gsof_type, data.len() as u8)),
         9 => PdopInfo::parse(data)
             .map(GsofRecord::PdopInfo)
-            .unwrap_or_else(|_| unknown(gsof_type, data)),
+            .unwrap_or_else(|_| unknown(gsof_type, data.len() as u8)),
         10 => ClockInfo::parse(data)
             .map(GsofRecord::ClockInfo)
-            .unwrap_or_else(|_| unknown(gsof_type, data)),
+            .unwrap_or_else(|_| unknown(gsof_type, data.len() as u8)),
         11 => PositionVcvInfo::parse(data)
             .map(GsofRecord::PositionVcvInfo)
-            .unwrap_or_else(|_| unknown(gsof_type, data)),
+            .unwrap_or_else(|_| unknown(gsof_type, data.len() as u8)),
         12 => PositionSigmaInfo::parse(data)
             .map(GsofRecord::PositionSigmaInfo)
-            .unwrap_or_else(|_| unknown(gsof_type, data)),
+            .unwrap_or_else(|_| unknown(gsof_type, data.len() as u8)),
         13 => BriefSvInfo::parse(data)
             .map(GsofRecord::BriefSvInfo)
-            .unwrap_or_else(|_| unknown(gsof_type, data)),
+            .unwrap_or_else(|_| unknown(gsof_type, data.len() as u8)),
         14 => SvDetailedInfo::parse(data)
             .map(GsofRecord::SvDetailedInfo)
-            .unwrap_or_else(|_| unknown(gsof_type, data)),
+            .unwrap_or_else(|_| unknown(gsof_type, data.len() as u8)),
         15 => ReceiverSerialNumber::parse(data)
             .map(GsofRecord::ReceiverSerialNumber)
-            .unwrap_or_else(|_| unknown(gsof_type, data)),
+            .unwrap_or_else(|_| unknown(gsof_type, data.len() as u8)),
         16 => UtcTime::parse(data)
             .map(GsofRecord::UtcTime)
-            .unwrap_or_else(|_| unknown(gsof_type, data)),
+            .unwrap_or_else(|_| unknown(gsof_type, data.len() as u8)),
         27 => AttitudeInfo::parse(data)
             .map(GsofRecord::AttitudeInfo)
-            .unwrap_or_else(|_| unknown(gsof_type, data)),
+            .unwrap_or_else(|_| unknown(gsof_type, data.len() as u8)),
         33 => AllBriefSvInfo::parse(data)
             .map(GsofRecord::AllBriefSvInfo)
-            .unwrap_or_else(|_| unknown(gsof_type, data)),
+            .unwrap_or_else(|_| unknown(gsof_type, data.len() as u8)),
         34 => AllDetailedSvInfo::parse(data)
             .map(GsofRecord::AllDetailedSvInfo)
-            .unwrap_or_else(|_| unknown(gsof_type, data)),
+            .unwrap_or_else(|_| unknown(gsof_type, data.len() as u8)),
         35 => ReceivedBaseInfo::parse(data)
             .map(GsofRecord::ReceivedBaseInfo)
-            .unwrap_or_else(|_| unknown(gsof_type, data)),
+            .unwrap_or_else(|_| unknown(gsof_type, data.len() as u8)),
         37 => BatteryMemoryInfo::parse(data)
             .map(GsofRecord::BatteryMemoryInfo)
-            .unwrap_or_else(|_| unknown(gsof_type, data)),
+            .unwrap_or_else(|_| unknown(gsof_type, data.len() as u8)),
         38 => PositionTypeInfo::parse(data)
             .map(GsofRecord::PositionTypeInfo)
-            .unwrap_or_else(|_| unknown(gsof_type, data)),
+            .unwrap_or_else(|_| unknown(gsof_type, data.len() as u8)),
         40 => LbandStatus::parse(data)
             .map(GsofRecord::LbandStatus)
-            .unwrap_or_else(|_| unknown(gsof_type, data)),
+            .unwrap_or_else(|_| unknown(gsof_type, data.len() as u8)),
         41 => BasePositionQuality::parse(data)
             .map(GsofRecord::BasePositionQuality)
-            .unwrap_or_else(|_| unknown(gsof_type, data)),
+            .unwrap_or_else(|_| unknown(gsof_type, data.len() as u8)),
         49 => InsFullNav::parse(data)
             .map(GsofRecord::InsFullNav)
-            .unwrap_or_else(|_| unknown(gsof_type, data)),
+            .unwrap_or_else(|_| unknown(gsof_type, data.len() as u8)),
         50 => InsRmsInfo::parse(data)
             .map(GsofRecord::InsRmsInfo)
-            .unwrap_or_else(|_| unknown(gsof_type, data)),
+            .unwrap_or_else(|_| unknown(gsof_type, data.len() as u8)),
         52 => DmiRawData::parse(data)
             .map(GsofRecord::DmiRawData)
-            .unwrap_or_else(|_| unknown(gsof_type, data)),
+            .unwrap_or_else(|_| unknown(gsof_type, data.len() as u8)),
         63 => InsVnavFullNav::parse(data)
             .map(GsofRecord::InsVnavFullNav)
-            .unwrap_or_else(|_| unknown(gsof_type, data)),
+            .unwrap_or_else(|_| unknown(gsof_type, data.len() as u8)),
         64 => InsVnavRmsInfo::parse(data)
             .map(GsofRecord::InsVnavRmsInfo)
-            .unwrap_or_else(|_| unknown(gsof_type, data)),
-        _ => unknown(gsof_type, data),
+            .unwrap_or_else(|_| unknown(gsof_type, data.len() as u8)),
+        _ => unknown(gsof_type, data.len() as u8),
     }
 }
 

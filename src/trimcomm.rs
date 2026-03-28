@@ -56,6 +56,20 @@ impl core::fmt::Display for FrameError {
     }
 }
 
+#[cfg(feature = "defmt")]
+impl defmt::Format for FrameError {
+    fn format(&self, f: defmt::Formatter) {
+        match self {
+            FrameError::BadEtx(b) => defmt::write!(f, "expected ETX 0x03, got 0x{:02X}", b),
+            FrameError::BadChecksum { got, expected } => {
+                defmt::write!(f, "checksum mismatch: got 0x{:02X}, expected 0x{:02X}", got, expected)
+            }
+            #[cfg(feature = "std")]
+            FrameError::Io(_e) => defmt::write!(f, "I/O error"),
+        }
+    }
+}
+
 #[cfg(feature = "std")]
 impl std::error::Error for FrameError {}
 
@@ -71,7 +85,8 @@ impl From<std::io::Error> for FrameError {
 // ---------------------------------------------------------------------------
 
 /// A validated Trimcomm packet.
-#[derive(Debug)]
+#[derive(Debug, Clone)]
+#[cfg_attr(feature = "defmt", derive(defmt::Format))]
 pub struct TrimcommPacket {
     pub stat: u8,
     pub packet_type: u8,
